@@ -16,6 +16,7 @@ import {
   ArrowRight,
   Info,
   Sliders,
+  BarChart2,
   Table as TableIcon,
 } from 'lucide-react';
 import type { DataStructureAnalysis, ProposedVisualization, ColumnProfile } from '../utils/dataStructureAnalyzer';
@@ -25,6 +26,7 @@ interface DataStructureInspectorProps {
   selectedVisualizationId?: string | null;
   onSelectVisualization?: (proposal: ProposedVisualization) => void;
   onApplyQuestion?: (suggestedQuestion: string) => void;
+  onOpenQuickView?: () => void;
   currentQuestion?: string;
   isAnalyzingDataset?: boolean;
 }
@@ -34,6 +36,7 @@ export const DataStructureInspector: React.FC<DataStructureInspectorProps> = ({
   selectedVisualizationId,
   onSelectVisualization,
   onApplyQuestion,
+  onOpenQuickView,
   currentQuestion = '',
   isAnalyzingDataset = false,
 }) => {
@@ -142,8 +145,8 @@ export const DataStructureInspector: React.FC<DataStructureInspectorProps> = ({
         </div>
       </div>
 
-      {/* Tabs / Switcher */}
-      <div className="flex items-center justify-between gap-2 pt-1">
+      {/* Tabs / Switcher & Quick View Stats CTA */}
+      <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
         <div className="flex items-center gap-1 bg-neutral-100/80 p-1 rounded-xl border border-neutral-200/70 text-xs font-semibold">
           <button
             type="button"
@@ -169,12 +172,26 @@ export const DataStructureInspector: React.FC<DataStructureInspectorProps> = ({
           </button>
         </div>
 
-        {topRecommendation && activeTab === 'proposals' && (
-          <span className="hidden md:inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200/60">
-            <CheckCircle2 className="h-3 w-3" />
-            Top Match: {topRecommendation.title} ({topRecommendation.suitabilityScore}%)
-          </span>
-        )}
+        <div className="flex items-center gap-2">
+          {onOpenQuickView && (
+            <button
+              type="button"
+              onClick={onOpenQuickView}
+              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-xl text-xs font-semibold bg-blue-50 hover:bg-blue-100/80 text-io-blue border border-blue-200 shadow-2xs transition cursor-pointer"
+              title="Open descriptive statistics (mean, median, count, std dev)"
+            >
+              <BarChart2 className="h-3.5 w-3.5" />
+              <span>Quick View Descriptive Stats</span>
+            </button>
+          )}
+
+          {topRecommendation && activeTab === 'proposals' && (
+            <span className="hidden lg:inline-flex items-center gap-1 text-[11px] font-semibold text-emerald-700 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200/60">
+              <CheckCircle2 className="h-3 w-3" />
+              Top: {topRecommendation.title} ({topRecommendation.suitabilityScore}%)
+            </span>
+          )}
+        </div>
       </div>
 
       {/* TAB 1: PROPOSED VISUALIZATIONS */}

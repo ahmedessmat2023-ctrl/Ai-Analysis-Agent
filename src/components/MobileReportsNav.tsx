@@ -16,6 +16,7 @@ import {
   Layers,
 } from 'lucide-react';
 import type { AnalysisReport, ChatMessage } from '../types';
+import { scanReportTrends } from '../utils/trendNotifier';
 
 export type DashboardTab = 'overview' | 'charts' | 'tables' | 'recommendations' | 'print';
 
@@ -67,6 +68,9 @@ export const MobileReportsNav: React.FC<MobileReportsNavProps> = ({
   const validChartsCount = report?.charts?.filter((c) => c.image)?.length || 0;
   const tablesCount = report?.tables?.length || 0;
   const recommendationsCount = report?.recommendations?.length || 0;
+  const detectedTrends = React.useMemo(() => {
+    return scanReportTrends(report?.insights, 10);
+  }, [report?.insights]);
 
   const handleTabClick = (tab: DashboardTab) => {
     onSelectTab(tab);
@@ -150,9 +154,23 @@ export const MobileReportsNav: React.FC<MobileReportsNavProps> = ({
                         <FileText className={`h-4 w-4 ${activeTab === 'overview' ? 'text-io-blue' : 'text-neutral-500'}`} />
                         <span>Overview & Summary</span>
                       </div>
-                      <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono ${activeTab === 'overview' ? 'bg-neutral-800 text-neutral-300' : 'bg-neutral-100 text-neutral-600'}`}>
-                        KPIs
-                      </span>
+                      <div className="flex items-center gap-1.5">
+                        {detectedTrends.length > 0 && (
+                          <span
+                            className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-amber-500/20 text-amber-600 dark:text-amber-400 font-mono"
+                            title={`${detectedTrends.length} significant trend shifts detected`}
+                          >
+                            <span className="relative flex h-1.5 w-1.5">
+                              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-500 opacity-75" />
+                              <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-amber-500" />
+                            </span>
+                            {detectedTrends.length}
+                          </span>
+                        )}
+                        <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono ${activeTab === 'overview' ? 'bg-neutral-800 text-neutral-300' : 'bg-neutral-100 text-neutral-600'}`}>
+                          KPIs
+                        </span>
+                      </div>
                     </button>
 
                     <button

@@ -29,6 +29,10 @@ import {
 import { SAMPLE_DATASETS, type SampleDataset } from './utils/sampleDatasets';
 import { MobileReportsNav, type DashboardTab } from './components/MobileReportsNav';
 import { MobileAgentDrawer } from './components/MobileAgentDrawer';
+import { TrendBadge, TrendNotifierBanner } from './components/TrendNotifier';
+import { scanReportTrends, analyzeInsightTrend } from './utils/trendNotifier';
+import { QuickViewModal } from './components/QuickViewModal';
+import { DataTable } from './components/DataTable';
 
 const PixelatedHeader: React.FC = () => {
   return (
@@ -245,6 +249,7 @@ const App: React.FC = () => {
   const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
   const [isMobileAgentDrawerOpen, setIsMobileAgentDrawerOpen] = useState(false);
   const [dashboardTab, setDashboardTab] = useState<DashboardTab>('overview');
+  const [quickViewFile, setQuickViewFile] = useState<{ fileName: string; content: string } | null>(null);
   const activeMessageIdRef = useRef<string | null>(null);
 
   const abortRef = useRef<AbortController | null>(null);
@@ -279,6 +284,20 @@ const App: React.FC = () => {
     setFiles([newFile]);
     setErrorMsg(null);
   }, []);
+
+  const handleOpenQuickView = useCallback(
+    (fileToView?: UploadedFile | { name: string; content?: string } | null) => {
+      if (fileToView && fileToView.content) {
+        setQuickViewFile({ fileName: fileToView.name, content: fileToView.content });
+        return;
+      }
+      const primary = files.find((f) => f.content && f.content.trim().length > 0) || files[0];
+      if (primary && primary.content) {
+        setQuickViewFile({ fileName: primary.name, content: primary.content });
+      }
+    },
+    [files]
+  );
 
   const handleSelectVisualization = useCallback((proposal: ProposedVisualization) => {
     setSelectedVisualizationId(proposal.id);
@@ -857,6 +876,7 @@ const App: React.FC = () => {
                 onSelectVisualization={handleSelectVisualization}
                 onApplyQuestion={handleApplyQuestion}
                 onSelectSample={handleSelectSample}
+                onQuickView={handleOpenQuickView}
                 onDragOver={(e) => {
                   e.preventDefault();
                   setDragOver(true);
@@ -975,6 +995,15 @@ const App: React.FC = () => {
           )}
         </AnimatePresence>
       </main>
+
+      {/* Descriptive Statistics Quick View Modal */}
+      <QuickViewModal
+        isOpen={!!quickViewFile}
+        onClose={() => setQuickViewFile(null)}
+        fileName={quickViewFile?.fileName}
+        csvContent={quickViewFile?.content}
+        onProceedToAnalysis={canRun ? () => runAnalysis() : undefined}
+      />
     </div>
   );
 };
@@ -993,6 +1022,7 @@ interface SetupProps {
   onSelectVisualization: (proposal: ProposedVisualization) => void;
   onApplyQuestion: (suggestedQuestion: string) => void;
   onSelectSample: (sample: SampleDataset) => void;
+  onQuickView?: (file?: UploadedFile | { name: string; content?: string }) => void;
   onDragOver: (e: React.DragEvent) => void;
   onDragLeave: () => void;
   onDrop: (e: React.DragEvent) => void;
@@ -1006,7 +1036,7 @@ interface SetupProps {
 const SetupPanel: React.FC<SetupProps> = ({
   files, dragOver, question, examples, canRun, isUploading = false,
   analysis, selectedVisualizationId, onSelectVisualization, onApplyQuestion, onSelectSample,
-  onDragOver, onDragLeave, onDrop, onPickFiles, onAddGcsUri, onRemoveFile,
+  onQuickView, onDragOver, onDragLeave, onDrop, onPickFiles, onAddGcsUri, onRemoveFile,
   onQuestionChange, onRun
 }) => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -1136,7 +1166,7 @@ const SetupPanel: React.FC<SetupProps> = ({
                      key={f.name}
                      className="flex items-center justify-between rounded-lg border border-neutral-200 bg-neutral-50 px-3 py-2 text-sm"
                   >
-                     <span className="flex items-center gap-2 truncate max-w-[80%]">
+                     <span className="flex items-center gap-2 truncate max-w-[65%] sm:max-w-[70%]">
                        <span className="truncate font-medium text-neutral-800">{f.name}</span>
                        <span className="text-[11px] px-2 py-0.5 rounded-full bg-neutral-200/80 text-neutral-600 font-medium truncate">
                          {f.isGcsUri || (f.gsUri && !f.content)
@@ -1144,13 +1174,30 @@ const SetupPanel: React.FC<SetupProps> = ({
                            : `Inline CSV • ${f.size ? (f.size / 1024).toFixed(1) : (f.content ? (f.content.length / 1024).toFixed(1) : '0')} KB`}
                        </span>
                      </span>
-                     <button 
-                       disabled={isUploading} 
-                       onClick={(e) => { e.stopPropagation(); onRemoveFile(f.name); }} 
-                       className="text-neutral-400 hover:text-io-red font-medium text-xs px-1.5 py-0.5 disabled:opacity-30 disabled:cursor-not-allowed shrink-0"
-                     >
-                       Remove
-                     </button>
+                     <div className="flex items-center gap-2 shrink-0">
+                       {f.content && (
+                         <button
+                           type="button"
+                           disabled={isUploading}
+                           onClick={(e) => {
+                             e.stopPropagation();
+                             onQuickView?.(f);
+                           }}
+                           className="inline-flex items-center gap-1 text-xs font-semibold px-2.5 py-1 rounded-lg bg-white hover:bg-blue-50 text-io-blue border border-blue-200 shadow-2xs transition cursor-pointer disabled:opacity-50"
+                           title="Quick View Descriptive Statistics (Mean, Median, Count)"
+                         >
+                           <Eye className="h-3.5 w-3.5" />
+                           <span>Quick View</span>
+                         </button>
+                       )}
+                       <button 
+                         disabled={isUploading} 
+                         onClick={(e) => { e.stopPropagation(); onRemoveFile(f.name); }} 
+                         className="text-neutral-400 hover:text-io-red font-medium text-xs px-1.5 py-0.5 disabled:opacity-30 disabled:cursor-not-allowed"
+                       >
+                         Remove
+                       </button>
+                     </div>
                   </li>
                 ))}
               </ul>
@@ -1188,6 +1235,7 @@ const SetupPanel: React.FC<SetupProps> = ({
               selectedVisualizationId={selectedVisualizationId}
               onSelectVisualization={onSelectVisualization}
               onApplyQuestion={onApplyQuestion}
+              onOpenQuickView={() => onQuickView?.()}
               currentQuestion={question}
               isAnalyzingDataset={isUploading}
             />
@@ -2196,6 +2244,11 @@ const ReportView: React.FC<{
     return report.insights?.slice(0, 4) || [];
   }, [report.insights]);
 
+  // Detected Significant Trends (>10% shift)
+  const detectedTrends = useMemo(() => {
+    return scanReportTrends(report.insights, 10);
+  }, [report.insights]);
+
   return (
     <div className="space-y-6">
       {/* Dashboard Top Navigation & Header */}
@@ -2337,24 +2390,53 @@ const ReportView: React.FC<{
       {/* Tab 1: Overview */}
       {activeTab === 'overview' && (
         <div className="space-y-6">
-          {/* Executive KPI Bento Row */}
+          {/* Trend Notifier Banner for Detected Shifts (>10%) */}
+          {detectedTrends.length > 0 && (
+            <TrendNotifierBanner
+              trends={detectedTrends}
+              onSelectInsight={() => setActiveTab('recommendations')}
+            />
+          )}
+
+          {/* Executive KPI Bento Row with Trend Notifier Badges & Subtle Pulse */}
           {kpiInsights.length > 0 && (
             <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4">
-              {kpiInsights.map((kpi, idx) => (
-                <div key={idx} className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm flex flex-col justify-between hover:border-io-blue/40 transition min-w-0">
-                  <div className="flex items-start justify-between gap-2">
-                    <span className="text-xs font-bold uppercase tracking-wider text-neutral-500 truncate" title={kpi.metric || kpi.title}>
-                      {kpi.metric || kpi.title}
-                    </span>
+              {kpiInsights.map((kpi, idx) => {
+                const trend = analyzeInsightTrend(kpi, 10);
+                const isGrowth = trend?.direction === 'growth';
+                const isDecline = trend?.direction === 'decline';
+
+                return (
+                  <div
+                    key={idx}
+                    className={`rounded-2xl border bg-white p-5 shadow-sm flex flex-col justify-between transition min-w-0 relative ${
+                      trend
+                        ? isGrowth
+                          ? 'border-emerald-200/90 hover:border-emerald-300 ring-1 ring-emerald-500/10'
+                          : isDecline
+                          ? 'border-rose-200/90 hover:border-rose-300 ring-1 ring-rose-500/10'
+                          : 'border-indigo-200/90 hover:border-indigo-300 ring-1 ring-indigo-500/10'
+                        : 'border-neutral-200 hover:border-io-blue/40'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-2">
+                      <span
+                        className="text-xs font-bold uppercase tracking-wider text-neutral-500 truncate"
+                        title={kpi.metric || kpi.title}
+                      >
+                        {kpi.metric || kpi.title}
+                      </span>
+                      {trend && <TrendBadge trend={trend} size="sm" pulse />}
+                    </div>
+                    <div className="mt-2 text-xl sm:text-2xl xl:text-3xl font-extrabold text-neutral-900 font-sans tracking-tight leading-tight break-words py-1">
+                      {kpi.value || 'Key Trend'}
+                    </div>
+                    <p className="mt-1 text-xs text-neutral-600 line-clamp-2 leading-relaxed">
+                      {kpi.detail}
+                    </p>
                   </div>
-                  <div className="mt-2 text-xl sm:text-2xl xl:text-3xl font-extrabold text-neutral-900 font-sans tracking-tight leading-tight break-words py-1">
-                    {kpi.value || 'Key Trend'}
-                  </div>
-                  <p className="mt-1 text-xs text-neutral-600 line-clamp-2 leading-relaxed">
-                    {kpi.detail}
-                  </p>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
 
@@ -2559,20 +2641,46 @@ const ReportView: React.FC<{
             <section>
               <SectionTitle title="Comprehensive AI Insights" />
               <div className="grid gap-4 sm:grid-cols-2 mt-3">
-                {report.insights.map((ins, i) => (
-                  <div key={i} className="rounded-xl border border-neutral-200 bg-white p-5 shadow-sm">
-                    <div className="flex items-baseline justify-between gap-2">
-                      <h3 className="font-semibold text-neutral-900 text-base">{ins.title}</h3>
-                      {ins.value && (
-                        <span className="shrink-0 rounded-lg bg-blue-50 px-2.5 py-1 text-sm font-bold text-io-blue">
-                          {ins.value}
-                        </span>
-                      )}
+                {report.insights.map((ins, i) => {
+                  const trend = analyzeInsightTrend(ins, 10);
+                  const isGrowth = trend?.direction === 'growth';
+                  const isDecline = trend?.direction === 'decline';
+
+                  return (
+                    <div
+                      key={i}
+                      className={`rounded-xl border bg-white p-5 shadow-sm transition ${
+                        trend
+                          ? isGrowth
+                            ? 'border-emerald-200/90 hover:border-emerald-300 ring-1 ring-emerald-500/10'
+                            : isDecline
+                            ? 'border-rose-200/90 hover:border-rose-300 ring-1 ring-rose-500/10'
+                            : 'border-indigo-200/90 hover:border-indigo-300 ring-1 ring-indigo-500/10'
+                          : 'border-neutral-200'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <h3 className="font-semibold text-neutral-900 text-base">{ins.title}</h3>
+                            {trend && <TrendBadge trend={trend} size="sm" pulse />}
+                          </div>
+                          {ins.metric && (
+                            <p className="mt-1 text-xs uppercase font-mono tracking-wider text-neutral-400">
+                              {ins.metric}
+                            </p>
+                          )}
+                        </div>
+                        {ins.value && (
+                          <span className="shrink-0 rounded-lg bg-blue-50 px-2.5 py-1 text-sm font-bold text-io-blue font-mono">
+                            {ins.value}
+                          </span>
+                        )}
+                      </div>
+                      <p className="mt-3 text-sm leading-relaxed text-neutral-600">{ins.detail}</p>
                     </div>
-                    {ins.metric && <p className="mt-1 text-xs uppercase font-mono tracking-wider text-neutral-400">{ins.metric}</p>}
-                    <p className="mt-3 text-sm leading-relaxed text-neutral-600">{ins.detail}</p>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </section>
           )}
@@ -2964,59 +3072,6 @@ const SectionTitle: React.FC<{ title: string }> = ({ title }) => (
     {title}
   </div>
 );
-
-const DataTable: React.FC<{ table: ReportTable; searchQuery?: string }> = ({ table, searchQuery = '' }) => {
-  const filteredRows = useMemo(() => {
-    if (!searchQuery.trim()) return table.rows;
-    const lower = searchQuery.toLowerCase();
-    return table.rows.filter((row) =>
-      row.some((cell) => cell !== null && String(cell).toLowerCase().includes(lower))
-    );
-  }, [table.rows, searchQuery]);
-
-  return (
-    <div className="overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-sm">
-      <div className="border-b border-neutral-100 px-5 py-3.5 flex items-center justify-between bg-neutral-50/50">
-        <div>
-          <p className="text-sm font-bold text-neutral-800">{table.title}</p>
-          {table.caption && <p className="mt-0.5 text-xs text-neutral-500">{table.caption}</p>}
-        </div>
-        <span className="text-xs font-mono text-neutral-400 bg-neutral-100 px-2.5 py-1 rounded-lg">
-          {filteredRows.length} {filteredRows.length === 1 ? 'row' : 'rows'}
-        </span>
-      </div>
-      <div className="overflow-x-auto max-h-[500px]">
-        <table className="w-full text-xs sm:text-sm">
-          <thead className="sticky top-0 z-10 bg-neutral-100 shadow-xs">
-            <tr className="border-b border-neutral-200 text-left">
-              {table.columns.map((c, i) => (
-                <th key={i} className="px-4 py-2.5 font-bold text-neutral-700 whitespace-nowrap">{c}</th>
-              ))}
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-neutral-100">
-            {filteredRows.map((row, ri) => (
-              <tr key={ri} className="transition hover:bg-neutral-50/80">
-                {row.map((cell, ci) => (
-                  <td key={ci} className="px-4 py-2.5 text-neutral-700 whitespace-nowrap">
-                    {cell === null ? <span className="text-neutral-300">—</span> : String(cell)}
-                  </td>
-                ))}
-              </tr>
-            ))}
-            {filteredRows.length === 0 && (
-              <tr>
-                <td colSpan={table.columns.length} className="px-4 py-8 text-center text-xs text-neutral-400">
-                  No matching rows found for "{searchQuery}".
-                </td>
-              </tr>
-            )}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-};
 
 export default App;
 
