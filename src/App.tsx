@@ -11,7 +11,7 @@ import type {
 import {
   LogIn, LogOut, User as UserIcon, Check, Sparkles, Presentation, Database,
   Sun, Moon, Maximize2, Layers, Hash, Tag, Eye, EyeOff, RotateCcw, Filter,
-  Bot, Terminal, Menu,
+  Bot, Terminal, Menu, TrendingUp,
 } from 'lucide-react';
 import {
   ChartCard,
@@ -1902,6 +1902,7 @@ const ReportView: React.FC<{
   const [isExportingPdf, setIsExportingPdf] = useState(false);
   const [chartTheme, setChartTheme] = useState<'light' | 'dark'>('light');
   const [showDataValues, setShowDataValues] = useState<boolean>(true);
+  const [showTrendline, setShowTrendline] = useState<boolean>(false);
 
   const validCharts = useMemo(() => {
     return report.charts?.filter((c) => c.image) || [];
@@ -2277,6 +2278,21 @@ const ReportView: React.FC<{
 
           {/* Action Tools */}
           <div className="flex flex-wrap items-center gap-2 shrink-0 self-start md:self-center">
+            {/* Global Trendline Toggle */}
+            <button
+              onClick={() => setShowTrendline((v) => !v)}
+              className={`flex items-center gap-1.5 rounded-xl border px-3.5 py-2.5 text-sm font-semibold transition cursor-pointer shadow-2xs ${
+                showTrendline
+                  ? 'border-emerald-200 bg-emerald-50/90 text-emerald-900 hover:bg-emerald-100'
+                  : 'border-neutral-200 bg-neutral-50 text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900'
+              }`}
+              title={`Linear regression trendlines are currently ${showTrendline ? 'Enabled' : 'Disabled'}. Click to toggle.`}
+            >
+              <TrendingUp className={`h-4 w-4 ${showTrendline ? 'text-emerald-600' : 'text-neutral-400'}`} />
+              <span className="hidden sm:inline">Trendlines: {showTrendline ? 'On' : 'Off'}</span>
+              <span className="sm:hidden">Trends</span>
+            </button>
+
             {/* Chart Data Values Toggle */}
             <button
               onClick={() => setShowDataValues((v) => !v)}
@@ -2455,6 +2471,18 @@ const ReportView: React.FC<{
                 <SectionTitle title="Featured Visualizations" />
                 <div className="flex items-center gap-2">
                   <button
+                    onClick={() => setShowTrendline((v) => !v)}
+                    className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg border transition cursor-pointer ${
+                      showTrendline
+                        ? 'border-emerald-200 bg-emerald-50 text-emerald-700'
+                        : 'border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-50'
+                    }`}
+                    title="Toggle linear regression trendlines"
+                  >
+                    <TrendingUp className={`h-3 w-3 ${showTrendline ? 'text-emerald-600' : 'text-neutral-400'}`} />
+                    <span>Trends: {showTrendline ? 'On' : 'Off'}</span>
+                  </button>
+                  <button
                     onClick={() => setShowDataValues((v) => !v)}
                     className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg border transition cursor-pointer ${
                       showDataValues
@@ -2488,6 +2516,7 @@ const ReportView: React.FC<{
                     tables={report.tables}
                     theme={chartTheme}
                     showValues={showDataValues}
+                    showTrendline={showTrendline}
                     onZoom={() => setZoomedChart(c)}
                   />
                 ))}
@@ -2533,6 +2562,20 @@ const ReportView: React.FC<{
             </div>
             
             <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+              {/* Trendline Toggle Button in Visualizations Tab */}
+              <button
+                onClick={() => setShowTrendline((v) => !v)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition cursor-pointer shadow-2xs ${
+                  showTrendline
+                    ? 'bg-emerald-50 border-emerald-200 text-emerald-700 hover:bg-emerald-100'
+                    : 'bg-neutral-50 border-neutral-200 text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900'
+                }`}
+                title="Toggle linear regression trendlines on continuous charts"
+              >
+                <TrendingUp className={`h-3.5 w-3.5 ${showTrendline ? 'text-emerald-600' : 'text-neutral-400'}`} />
+                <span>Trendlines: {showTrendline ? 'Enabled' : 'Disabled'}</span>
+              </button>
+
               {/* Direct Values Toggle Button in Visualizations Tab */}
               <button
                 onClick={() => setShowDataValues((v) => !v)}
@@ -2577,6 +2620,7 @@ const ReportView: React.FC<{
                 tables={report.tables}
                 theme={chartTheme}
                 showValues={showDataValues}
+                showTrendline={showTrendline}
                 onZoom={() => setZoomedChart(c)}
               />
             ))}
@@ -2852,6 +2896,7 @@ const ReportView: React.FC<{
                 tables={report.tables}
                 theme={chartTheme}
                 showValues={showDataValues}
+                showTrendlineDefault={showTrendline}
                 onClose={() => setZoomedChart(null)}
                 onToggleTheme={(t) => setChartTheme(t)}
                 onToggleValues={() => setShowDataValues((v) => !v)}
@@ -2869,16 +2914,28 @@ const ZoomedChartModalContent: React.FC<{
   tables?: ReportTable[];
   theme: 'light' | 'dark';
   showValues: boolean;
+  showTrendlineDefault?: boolean;
   onClose: () => void;
   onToggleTheme: (theme: 'light' | 'dark') => void;
   onToggleValues: () => void;
-}> = ({ chart, tables, theme, showValues, onClose, onToggleTheme, onToggleValues }) => {
+}> = ({
+  chart,
+  tables,
+  theme,
+  showValues,
+  showTrendlineDefault = false,
+  onClose,
+  onToggleTheme,
+  onToggleValues,
+}) => {
   const [hiddenSeries, setHiddenSeries] = useState<Set<string>>(new Set());
   const [viewMode, setViewMode] = useState<'interactive' | 'image'>('interactive');
+  const [showTrendline, setShowTrendline] = useState<boolean>(showTrendlineDefault);
 
   const chartData = useMemo(() => extractChartData(chart, tables), [chart, tables]);
   const hasInteractiveData = Boolean(chartData && chartData.data.length > 0);
   const activeSeries = chartData?.series || [];
+  const isContinuous = chartData && chartData.type !== 'pie';
 
   const toggleSeries = (id: string) => {
     setHiddenSeries((prev) => {
@@ -2912,6 +2969,25 @@ const ZoomedChartModalContent: React.FC<{
 
         {/* Modal Actions */}
         <div className="flex flex-wrap items-center gap-2">
+          {hasInteractiveData && isContinuous && (
+            <button
+              onClick={() => setShowTrendline((v) => !v)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition cursor-pointer ${
+                showTrendline
+                  ? theme === 'dark'
+                    ? 'bg-emerald-950/80 border-emerald-700 text-emerald-300'
+                    : 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                  : theme === 'dark'
+                    ? 'bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200'
+                    : 'bg-neutral-100 border-neutral-200 text-neutral-600 hover:text-neutral-900'
+              }`}
+              title="Toggle Linear Regression Trendline"
+            >
+              <TrendingUp className={`h-3.5 w-3.5 ${showTrendline ? 'text-emerald-400' : 'text-neutral-400'}`} />
+              <span>Trendline: {showTrendline ? 'On' : 'Off'}</span>
+            </button>
+          )}
+
           {hasInteractiveData && chart.image && (
             <div
               className={`flex items-center p-0.5 rounded-xl border text-xs font-semibold ${
@@ -3027,6 +3103,7 @@ const ZoomedChartModalContent: React.FC<{
             onToggleSeries={toggleSeries}
             theme={theme}
             showValues={showValues}
+            showTrendline={showTrendline}
             height={420}
           />
         ) : (

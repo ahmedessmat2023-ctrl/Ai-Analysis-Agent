@@ -90,6 +90,7 @@ export const DataTable: React.FC<DataTableProps> = ({
   const [activeColumnFilter, setActiveColumnFilter] = useState<number | 'all'>('all');
   const [expandedRows, setExpandedRows] = useState<Set<number>>(new Set());
   const [copiedRowIndex, setCopiedRowIndex] = useState<number | null>(null);
+  const [isDownloaded, setIsDownloaded] = useState(false);
 
   // Compute column statistics for all columns in the table
   const columnStats = useMemo<Record<number, ColumnStats>>(() => {
@@ -256,31 +257,41 @@ export const DataTable: React.FC<DataTableProps> = ({
 
   // Export to CSV
   const handleExportCSV = () => {
-    const headerRow = table.columns.map((c) => `"${c.replace(/"/g, '""')}"`).join(',');
-    const bodyRows = processedRows
-      .map((row) =>
-        row
-          .map((cell) =>
-            cell === null || cell === undefined
-              ? '""'
-              : `"${String(cell).replace(/"/g, '""')}"`
-          )
-          .join(',')
-      )
-      .join('\n');
+    try {
+      const headerRow = table.columns.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',');
+      const bodyRows = processedRows
+        .map((row) =>
+          row
+            .map((cell) =>
+              cell === null || cell === undefined
+                ? '""'
+                : `"${String(cell).replace(/"/g, '""')}"`
+            )
+            .join(',')
+        )
+        .join('\n');
 
-    const csvData = `${headerRow}\n${bodyRows}`;
-    const blob = new Blob([csvData], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute(
-      'download',
-      `${(table.title || 'data_table').replace(/[^a-zA-Z0-9]/g, '_')}.csv`
-    );
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+      // Prepend UTF-8 BOM for full compatibility with Excel and third-party spreadsheet tools
+      const csvData = `\uFEFF${headerRow}\n${bodyRows}`;
+      const blob = new Blob([csvData], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.setAttribute('href', url);
+      const safeTitle = (table.title || 'data_table')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '_')
+        .replace(/^_+|_+$/g, '');
+      link.setAttribute('download', `${safeTitle || 'data_table'}_export.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      setIsDownloaded(true);
+      setTimeout(() => setIsDownloaded(false), 2200);
+    } catch (err) {
+      console.error('Error exporting CSV:', err);
+    }
   };
 
   /**
@@ -614,15 +625,36 @@ export const DataTable: React.FC<DataTableProps> = ({
             )}
           </button>
 
-          {/* Export CSV Button */}
+          {/* Download CSV Button */}
           <button
+            id="download-csv-btn"
             type="button"
             onClick={handleExportCSV}
-            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-xl border border-neutral-200 bg-white hover:bg-neutral-100 text-neutral-700 transition cursor-pointer shadow-2xs"
-            title="Export filtered data table as CSV"
+            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-xl border transition cursor-pointer shadow-2xs ${
+              isDownloaded
+                ? 'bg-emerald-50 text-emerald-700 border-emerald-300'
+                : 'bg-white hover:bg-neutral-100 text-neutral-800 border-neutral-200 hover:border-neutral-300'
+            }`}
+            title={`Download ${processedRows.length} ${
+              processedRows.length === 1 ? 'row' : 'rows'
+            } as CSV file`}
           >
-            <Download className="h-3.5 w-3.5" />
-            <span className="hidden sm:inline">CSV</span>
+            {isDownloaded ? (
+              <>
+                <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" />
+                <span>Downloaded!</span>
+              </>
+            ) : (
+              <>
+                <Download className="h-3.5 w-3.5 text-neutral-600" />
+                <span>Download CSV</span>
+                {searchQuery.trim() && (
+                  <span className="ml-0.5 text-[10px] font-mono px-1.5 py-0.2 rounded bg-neutral-100 text-neutral-600">
+                    {processedRows.length}
+                  </span>
+                )}
+              </>
+            )}
           </button>
         </div>
       </div>
