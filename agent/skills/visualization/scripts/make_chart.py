@@ -136,6 +136,13 @@ def main():
         help="Display data values directly on the bars or lines for improved readability",
     )
     parser.add_argument(
+        "--hidden-series",
+        "--hidden_series",
+        dest="hidden_series",
+        default="",
+        help="Comma-separated series or category names to hide/exclude from the plot",
+    )
+    parser.add_argument(
         "--theme",
         default="light",
         choices=["light", "dark"],
@@ -156,6 +163,7 @@ def main():
     df.columns = df.columns.astype(str).str.strip()
     x_col = args.x.strip() if args.x else None
     y_cols = [c.strip() for c in args.y.split(",")] if args.y else []
+    hidden_series = set(s.strip().lower() for s in args.hidden_series.split(",") if s.strip())
 
     # Clean numeric columns
     for col in y_cols:
@@ -185,6 +193,10 @@ def main():
         if args.type == "bar":
             x_series = df[x_col].astype(str) if x_col and x_col in df.columns else df.iloc[:, 0].astype(str)
             y_series = df[y_cols[0]].fillna(0) if y_cols and y_cols[0] in df.columns else df.iloc[:, 1].fillna(0)
+            if hidden_series:
+                keep_mask = ~x_series.str.lower().isin(hidden_series)
+                x_series = x_series[keep_mask]
+                y_series = y_series[keep_mask]
             bars = ax.bar(x_series, y_series, color=palette[0], edgecolor=theme_cfg["pie_edge"], linewidth=0.5)
             if args.show_values:
                 labels = [format_data_label(v) for v in y_series]
@@ -203,6 +215,10 @@ def main():
             df_plot = df.iloc[::-1]  # largest on top
             x_series = df_plot[x_col].astype(str) if x_col and x_col in df_plot.columns else df_plot.iloc[:, 0].astype(str)
             y_series = df_plot[y_cols[0]].fillna(0) if y_cols and y_cols[0] in df_plot.columns else df_plot.iloc[:, 1].fillna(0)
+            if hidden_series:
+                keep_mask = ~x_series.str.lower().isin(hidden_series)
+                x_series = x_series[keep_mask]
+                y_series = y_series[keep_mask]
             bars = ax.barh(x_series, y_series, color=palette[1], edgecolor=theme_cfg["pie_edge"], linewidth=0.5)
             if args.show_values:
                 labels = [format_data_label(v) for v in y_series]
@@ -222,12 +238,17 @@ def main():
             valid_y_cols = [c for c in y_cols if c in df.columns]
             if not valid_y_cols and len(df.columns) > 1:
                 valid_y_cols = [df.columns[1]]
+            
+            lines_drawn = []
             for i, col in enumerate(valid_y_cols):
+                if col.strip().lower() in hidden_series:
+                    continue
                 y_vals = df[col].fillna(0)
-                ax.plot(
+                (line_art,) = ax.plot(
                     x_series, y_vals, marker="o", markersize=4.5,
                     linewidth=2.2, color=palette[i % len(palette)], label=col,
                 )
+                lines_drawn.append((line_art, col))
                 if args.show_values:
                     for x_idx, (x_val, y_val) in enumerate(zip(x_series, y_vals)):
                         lbl = format_data_label(y_val)
@@ -255,6 +276,25 @@ def main():
                 leg = ax.legend(frameon=True, facecolor=theme_cfg["card_bg"], edgecolor=theme_cfg["spine_color"])
                 for text in leg.get_texts():
                     text.set_color(theme_cfg["text_primary"])
+                    text.set_picker(True)
+                
+                # Setup interactive picker toggling on legend items
+                line_map = {}
+                for legline, (origline, col_name) in zip(leg.get_lines(), lines_drawn):
+                    legline.set_picker(True)
+                    legline.set_pickradius(6)
+                    line_map[legline] = origline
+
+                def on_legend_pick(event):
+                    artist = event.artist
+                    if artist in line_map:
+                        orig = line_map[artist]
+                        vis = not orig.get_visible()
+                        orig.set_visible(vis)
+                        artist.set_alpha(1.0 if vis else 0.25)
+                        fig.canvas.draw_idle()
+
+                fig.canvas.mpl_connect("pick_event", on_legend_pick)
 
         elif args.type == "scatter":
             x_series = pd.to_numeric(df[x_col], errors="coerce").fillna(0) if x_col and x_col in df.columns else df.iloc[:, 0]
@@ -277,6 +317,10 @@ def main():
         elif args.type == "pie":
             labels = df[x_col].astype(str) if x_col and x_col in df.columns else df.iloc[:, 0].astype(str)
             values = df[y_cols[0]].fillna(0) if y_cols and y_cols[0] in df.columns else df.iloc[:, 1].fillna(0)
+            if hidden_series:
+                keep_mask = ~labels.str.lower().isin(hidden_series)
+                labels = labels[keep_mask]
+                values = values[keep_mask]
             positive_mask = values > 0
             if positive_mask.any():
                 labels = labels[positive_mask]

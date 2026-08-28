@@ -10,8 +10,12 @@ export interface ReportChart {
   file: string;
   caption?: string;
   type?: string;
-  /** Base64 data URL injected by the server after extracting the PNG from the sandbox. */
+  /** Base64 data URL or relative URL injected by the server after extracting the PNG from the sandbox. */
   image?: string;
+  series?: string[];
+  data?: Array<Record<string, unknown>>;
+  xKey?: string;
+  yKeys?: string[];
 }
 
 export interface ReportTable {

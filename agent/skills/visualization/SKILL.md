@@ -28,6 +28,7 @@ python3 /.agents/skills/visualization/scripts/make_chart.py \
 | `--y` | for bar/line/scatter/pie | Column(s) for the y-axis; comma-separated for multi-series line |
 | `--title` | recommended | Chart title |
 | `--show-values` | no | Display data value labels directly on the bars or lines |
+| `--hidden-series` | no | Comma-separated series/categories to hide or toggle off |
 | `--theme` | no | Visual theme: `light` (default) or `dark` for high contrast |
 | `--output` | yes | Output PNG path (relative to workspace), under `charts/` |
 | `--top` | no | Keep only the top N rows by `--y` (useful for bar charts) |
