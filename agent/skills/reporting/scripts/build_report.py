@@ -34,6 +34,7 @@ import json
 import os
 from datetime import datetime
 
+import numpy as np
 import pandas as pd
 
 MAX_TABLE_ROWS = 20

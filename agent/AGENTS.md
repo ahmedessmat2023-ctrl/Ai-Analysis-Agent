@@ -77,7 +77,7 @@ Each skill lives in `/.agents/skills/<name>/` with a `SKILL.md` and (where appli
 
 | Skill | Script(s) | Purpose |
 |-------|-----------|---------|
-| `data-explorer` | *(agent-driven Pandas)* | Profile every CSV; report schema, types, nulls, stats, cardinality, join keys → `data/profile.json` |
+| `data-explorer` | `profile_data.py` *(or agent Pandas)* | Profile every CSV; report schema, types, nulls, stats, cardinality, join keys → `data/profile.json` |
 | `python-data` | *(agent-driven Pandas; scikit-learn optional)* | Aggregate, segment, pivot, time-series, cohort/RFM, plus optional ML (forecast, clustering, driver analysis) to answer the question |
 | `visualization` | `make_chart.py` | Render bar/line/scatter/pie/heatmap charts as PNGs |
 | `reporting` | `build_report.py` | Synthesize findings into a structured `report.json` |

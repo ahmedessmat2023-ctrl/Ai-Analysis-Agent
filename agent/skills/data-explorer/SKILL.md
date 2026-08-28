@@ -9,8 +9,11 @@ description: >-
 # Data explorer skill
 
 Profile any tabular dataset (CSV, JSON, Parquet) and produce a structured
-profile the other skills consume. This is **agent-driven**: write and run
-Python (`pandas`) with the `code_execution` tool — there is no fixed script.
+profile the other skills consume. You can run the built-in helper script:
+```bash
+python3 /.agents/skills/data-explorer/scripts/profile_data.py --workspace ./workspace
+```
+Or write and run custom Python (`pandas`) with the `code_execution` tool.
 
 ## Workflow
 

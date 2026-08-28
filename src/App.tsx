@@ -8,7 +8,7 @@ import autoTable from 'jspdf-autotable';
 import type {
   ActivityLog, AnalysisReport, ReportChart, ReportTable, UploadedFile,
 } from './types';
-import { LogIn, LogOut, User as UserIcon, Check, Sparkles, Presentation, Database } from 'lucide-react';
+import { LogIn, LogOut, User as UserIcon, Check, Sparkles, Presentation, Database, Sun, Moon, Maximize2, Layers, Hash, Tag, Eye, EyeOff } from 'lucide-react';
 
 const PixelatedHeader: React.FC = () => {
   return (
@@ -1614,6 +1614,8 @@ const ReportView: React.FC<{ report: AnalysisReport }> = ({ report }) => {
   const [zoomedChart, setZoomedChart] = useState<ReportChart | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [isExportingPdf, setIsExportingPdf] = useState(false);
+  const [chartTheme, setChartTheme] = useState<'light' | 'dark'>('light');
+  const [showDataValues, setShowDataValues] = useState<boolean>(true);
 
   const validCharts = useMemo(() => {
     return report.charts?.filter((c) => c.image) || [];
@@ -1983,7 +1985,42 @@ const ReportView: React.FC<{ report: AnalysisReport }> = ({ report }) => {
           </div>
 
           {/* Action Tools */}
-          <div className="flex items-center gap-2.5 shrink-0 self-start md:self-center">
+          <div className="flex flex-wrap items-center gap-2 shrink-0 self-start md:self-center">
+            {/* Chart Data Values Toggle */}
+            <button
+              onClick={() => setShowDataValues((v) => !v)}
+              className={`flex items-center gap-1.5 rounded-xl border px-3.5 py-2.5 text-sm font-semibold transition cursor-pointer shadow-2xs ${
+                showDataValues
+                  ? 'border-indigo-200 bg-indigo-50/90 text-indigo-900 hover:bg-indigo-100'
+                  : 'border-neutral-200 bg-neutral-50 text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900'
+              }`}
+              title={`On-chart direct data values are currently ${showDataValues ? 'Enabled' : 'Disabled'}. Click to toggle.`}
+            >
+              <Hash className={`h-4 w-4 ${showDataValues ? 'text-indigo-600' : 'text-neutral-400'}`} />
+              <span className="hidden sm:inline">Data Values: {showDataValues ? 'On' : 'Off'}</span>
+              <span className="sm:hidden">Values</span>
+            </button>
+
+            {/* Chart Theme Toggle */}
+            <button
+              onClick={() => setChartTheme((t) => (t === 'light' ? 'dark' : 'light'))}
+              className="flex items-center gap-2 rounded-xl border border-neutral-200 bg-neutral-50 px-3.5 py-2.5 text-sm font-semibold text-neutral-800 transition hover:bg-neutral-100 cursor-pointer shadow-2xs"
+              title={`Currently in ${chartTheme} chart theme. Click to toggle.`}
+            >
+              {chartTheme === 'light' ? (
+                <>
+                  <Moon className="h-4 w-4 text-indigo-600" />
+                  <span className="hidden sm:inline">Dark Theme Charts</span>
+                  <span className="sm:hidden">Dark</span>
+                </>
+              ) : (
+                <>
+                  <Sun className="h-4 w-4 text-amber-500" />
+                  <span className="hidden sm:inline">Light Theme Charts</span>
+                  <span className="sm:hidden">Light</span>
+                </>
+              )}
+            </button>
             <button
               onClick={exportDashboardToPDF}
               disabled={isExportingPdf}
@@ -2069,15 +2106,36 @@ const ReportView: React.FC<{ report: AnalysisReport }> = ({ report }) => {
             <div className="lg:col-span-2 space-y-4">
               <div className="flex items-center justify-between">
                 <SectionTitle title="Featured Visualizations" />
-                {validCharts.length > 2 && (
-                  <button onClick={() => setActiveTab('charts')} className="text-xs text-io-blue hover:underline font-semibold cursor-pointer">
-                    View all {validCharts.length} charts →
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setShowDataValues((v) => !v)}
+                    className={`flex items-center gap-1.5 text-xs px-2.5 py-1 rounded-lg border transition cursor-pointer ${
+                      showDataValues
+                        ? 'border-indigo-200 bg-indigo-50 text-indigo-700'
+                        : 'border-neutral-200 bg-white text-neutral-600 hover:bg-neutral-50'
+                    }`}
+                    title="Toggle data values on charts"
+                  >
+                    <Hash className={`h-3 w-3 ${showDataValues ? 'text-indigo-600' : 'text-neutral-400'}`} />
+                    <span>Values: {showDataValues ? 'On' : 'Off'}</span>
                   </button>
-                )}
+                  <button
+                    onClick={() => setChartTheme((t) => (t === 'light' ? 'dark' : 'light'))}
+                    className="flex items-center gap-1.5 text-xs text-neutral-600 hover:text-neutral-900 px-2 py-1 rounded-lg border border-neutral-200 bg-white hover:bg-neutral-50 transition cursor-pointer"
+                  >
+                    {chartTheme === 'light' ? <Moon className="h-3 w-3 text-indigo-600" /> : <Sun className="h-3 w-3 text-amber-500" />}
+                    <span className="capitalize">{chartTheme}</span>
+                  </button>
+                  {validCharts.length > 2 && (
+                    <button onClick={() => setActiveTab('charts')} className="text-xs text-io-blue hover:underline font-semibold cursor-pointer">
+                      View all {validCharts.length} charts →
+                    </button>
+                  )}
+                </div>
               </div>
               <div className="grid gap-4 sm:grid-cols-2">
                 {validCharts.slice(0, 2).map((c, i) => (
-                  <ChartCard key={i} chart={c} onZoom={() => setZoomedChart(c)} />
+                  <ChartCard key={i} chart={c} theme={chartTheme} showValues={showDataValues} onZoom={() => setZoomedChart(c)} />
                 ))}
                 {validCharts.length === 0 && (
                   <p className="col-span-2 p-8 text-center text-sm text-neutral-400 bg-white rounded-xl border border-neutral-200">
@@ -2114,13 +2172,58 @@ const ReportView: React.FC<{ report: AnalysisReport }> = ({ report }) => {
       {/* Tab 2: Visualizations */}
       {activeTab === 'charts' && (
         <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <SectionTitle title={`All Visualizations (${validCharts.length})`} />
-            <span className="text-xs text-neutral-500">Click any chart to inspect in full resolution</span>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-xl border border-neutral-200 shadow-2xs">
+            <div>
+              <SectionTitle title={`All Visualizations (${validCharts.length})`} />
+              <p className="text-xs text-neutral-500 mt-0.5">High-resolution analytical charts with contrast-optimized themes and on-chart values</p>
+            </div>
+            
+            <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+              {/* Direct Values Toggle Button in Visualizations Tab */}
+              <button
+                onClick={() => setShowDataValues((v) => !v)}
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition cursor-pointer shadow-2xs ${
+                  showDataValues
+                    ? 'bg-indigo-50 border-indigo-200 text-indigo-700 hover:bg-indigo-100'
+                    : 'bg-neutral-50 border-neutral-200 text-neutral-600 hover:bg-neutral-100 hover:text-neutral-900'
+                }`}
+                title="Toggle on-chart data values & point labels"
+              >
+                <Hash className={`h-3.5 w-3.5 ${showDataValues ? 'text-indigo-600' : 'text-neutral-400'}`} />
+                <span>Data Values: {showDataValues ? 'Enabled' : 'Disabled'}</span>
+              </button>
+
+              {/* Theme Toggle Segmented Control */}
+              <div className="flex items-center gap-1 bg-neutral-100 p-1 rounded-xl border border-neutral-200">
+                <button
+                  onClick={() => setChartTheme('light')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                    chartTheme === 'light' ? 'bg-white text-neutral-900 shadow-xs' : 'text-neutral-500 hover:text-neutral-800'
+                  }`}
+                >
+                  <Sun className="h-3.5 w-3.5 text-amber-500" /> Light
+                </button>
+                <button
+                  onClick={() => setChartTheme('dark')}
+                  className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                    chartTheme === 'dark' ? 'bg-slate-900 text-white shadow-xs' : 'text-neutral-500 hover:text-neutral-800'
+                  }`}
+                >
+                  <Moon className="h-3.5 w-3.5 text-indigo-400" /> Dark
+                </button>
+              </div>
+            </div>
           </div>
+
           <div className="grid gap-6 sm:grid-cols-2">
             {validCharts.map((c, i) => (
-              <ChartCard key={i} chart={c} onZoom={() => setZoomedChart(c)} />
+              <ChartCard
+                key={i}
+                chart={c}
+                theme={chartTheme}
+                showValues={showDataValues}
+                onZoom={() => setZoomedChart(c)}
+              />
             ))}
             {validCharts.length === 0 && (
               <p className="col-span-2 p-12 text-center text-sm text-neutral-400 bg-white rounded-xl border border-neutral-200">
@@ -2266,10 +2369,12 @@ const ReportView: React.FC<{ report: AnalysisReport }> = ({ report }) => {
             <h2 className="text-base font-bold text-neutral-900 mb-4 uppercase tracking-wide">Visualizations & Analytics</h2>
             <div className="grid grid-cols-1 gap-8">
               {validCharts.map((c, idx) => (
-                <div key={idx} className="border border-neutral-200 rounded-xl p-6 bg-white break-inside-avoid">
-                  <h3 className="text-base font-bold text-neutral-800 mb-1">{c.title}</h3>
-                  {c.caption && <p className="text-xs text-neutral-500 mb-4">{c.caption}</p>}
-                  <ChartImage src={c.image} alt={c.title} className="w-full max-h-[480px] object-contain mx-auto" />
+                <div key={idx} className={`border rounded-xl p-6 break-inside-avoid transition ${
+                  chartTheme === 'dark' ? 'border-slate-800 bg-slate-950 text-slate-100' : 'border-neutral-200 bg-white text-neutral-900'
+                }`}>
+                  <h3 className={`text-base font-bold mb-1 ${chartTheme === 'dark' ? 'text-slate-100' : 'text-neutral-800'}`}>{c.title}</h3>
+                  {c.caption && <p className={`text-xs mb-4 ${chartTheme === 'dark' ? 'text-slate-400' : 'text-neutral-500'}`}>{c.caption}</p>}
+                  <ChartImage src={c.image} alt={c.title} theme={chartTheme} className="w-full max-h-[480px] object-contain mx-auto" />
                 </div>
               ))}
             </div>
@@ -2348,29 +2453,95 @@ const ReportView: React.FC<{ report: AnalysisReport }> = ({ report }) => {
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             onClick={() => setZoomedChart(null)}
-            className="fixed inset-0 z-50 bg-neutral-900/80 backdrop-blur-sm flex items-center justify-center p-4 sm:p-8"
+            className="fixed inset-0 z-50 bg-neutral-950/85 backdrop-blur-sm flex items-center justify-center p-4 sm:p-8"
           >
             <motion.div
               initial={{ scale: 0.95 }}
               animate={{ scale: 1 }}
               exit={{ scale: 0.95 }}
               onClick={(e) => e.stopPropagation()}
-              className="bg-white rounded-2xl max-w-5xl w-full overflow-hidden shadow-2xl flex flex-col max-h-[90vh]"
+              className={`rounded-2xl max-w-5xl w-full overflow-hidden shadow-2xl flex flex-col max-h-[90vh] transition ${
+                chartTheme === 'dark'
+                  ? 'bg-slate-900 border border-slate-800 text-slate-100'
+                  : 'bg-white border border-neutral-200 text-neutral-900'
+              }`}
             >
-              <div className="flex items-center justify-between px-6 py-4 border-b border-neutral-100 bg-neutral-50">
+              <div className={`flex items-center justify-between px-6 py-4 border-b transition ${
+                chartTheme === 'dark'
+                  ? 'border-slate-800 bg-slate-950/60'
+                  : 'border-neutral-100 bg-neutral-50'
+              }`}>
                 <div>
-                  <h3 className="font-bold text-neutral-900 text-lg">{zoomedChart.title}</h3>
-                  {zoomedChart.caption && <p className="text-xs text-neutral-500 mt-0.5">{zoomedChart.caption}</p>}
+                  <h3 className={`font-bold text-lg ${chartTheme === 'dark' ? 'text-slate-100' : 'text-neutral-900'}`}>
+                    {zoomedChart.title}
+                  </h3>
+                  {zoomedChart.caption && (
+                    <p className={`text-xs mt-0.5 ${chartTheme === 'dark' ? 'text-slate-400' : 'text-neutral-500'}`}>
+                      {zoomedChart.caption}
+                    </p>
+                  )}
                 </div>
-                <button
-                  onClick={() => setZoomedChart(null)}
-                  className="rounded-xl px-3 py-1.5 text-xs font-semibold text-neutral-500 hover:bg-neutral-200 hover:text-neutral-700 transition cursor-pointer"
-                >
-                  Close
-                </button>
+                
+                {/* Modal Top Actions */}
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => setShowDataValues((v) => !v)}
+                    className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl text-xs font-semibold border transition cursor-pointer ${
+                      showDataValues
+                        ? chartTheme === 'dark'
+                          ? 'bg-indigo-950/80 border-indigo-700 text-indigo-300'
+                          : 'bg-indigo-50 border-indigo-200 text-indigo-700'
+                        : chartTheme === 'dark'
+                          ? 'bg-slate-800 border-slate-700 text-slate-400 hover:text-slate-200'
+                          : 'bg-neutral-100 border-neutral-200 text-neutral-600 hover:text-neutral-900'
+                    }`}
+                    title="Toggle Data Values"
+                  >
+                    <Hash className={`h-3 w-3 ${showDataValues ? 'text-indigo-400' : 'text-neutral-400'}`} />
+                    <span>Values: {showDataValues ? 'On' : 'Off'}</span>
+                  </button>
+
+                  <div className={`flex items-center gap-1 p-1 rounded-xl border ${
+                    chartTheme === 'dark' ? 'bg-slate-800 border-slate-700' : 'bg-neutral-200/70 border-neutral-300'
+                  }`}>
+                    <button
+                      onClick={() => setChartTheme('light')}
+                      className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                        chartTheme === 'light' ? 'bg-white text-neutral-900 shadow-xs' : 'text-neutral-500 hover:text-neutral-900'
+                      }`}
+                    >
+                      <Sun className="h-3 w-3 text-amber-500" /> Light
+                    </button>
+                    <button
+                      onClick={() => setChartTheme('dark')}
+                      className={`flex items-center gap-1 px-2.5 py-1 rounded-lg text-xs font-semibold transition cursor-pointer ${
+                        chartTheme === 'dark' ? 'bg-slate-950 text-white shadow-xs' : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      <Moon className="h-3 w-3 text-indigo-400" /> Dark
+                    </button>
+                  </div>
+                  <button
+                    onClick={() => setZoomedChart(null)}
+                    className={`rounded-xl px-3 py-1.5 text-xs font-semibold transition cursor-pointer ${
+                      chartTheme === 'dark'
+                        ? 'text-slate-400 hover:bg-slate-800 hover:text-slate-200'
+                        : 'text-neutral-500 hover:bg-neutral-200 hover:text-neutral-700'
+                    }`}
+                  >
+                    Close
+                  </button>
+                </div>
               </div>
-              <div className="p-6 overflow-auto flex-1 flex items-center justify-center bg-white">
-                <ChartImage src={zoomedChart.image} alt={zoomedChart.title} className="max-h-[75vh] w-auto object-contain mx-auto" />
+              <div className={`p-6 overflow-auto flex-1 flex items-center justify-center transition ${
+                chartTheme === 'dark' ? 'bg-slate-950' : 'bg-white'
+              }`}>
+                <ChartImage
+                  src={zoomedChart.image}
+                  alt={zoomedChart.title}
+                  theme={chartTheme}
+                  className="max-h-[75vh] w-auto object-contain mx-auto"
+                />
               </div>
             </motion.div>
           </motion.div>
@@ -2411,35 +2582,120 @@ const SectionTitle: React.FC<{ title: string }> = ({ title }) => (
   </div>
 );
 
-const ChartImage: React.FC<{ src: string; alt: string; className?: string }> = ({ src, alt, className = '' }) => {
+const ChartImage: React.FC<{
+  src: string;
+  alt: string;
+  className?: string;
+  theme?: 'light' | 'dark';
+}> = ({ src, alt, className = '', theme = 'light' }) => {
   const [error, setError] = useState(false);
   if (error) {
     return (
-      <div className={`flex flex-col items-center justify-center p-6 bg-neutral-50 rounded-xl border border-dashed border-neutral-300 text-neutral-400 text-xs text-center min-h-[140px] w-full ${className}`}>
+      <div
+        className={`flex flex-col items-center justify-center p-6 rounded-xl border border-dashed text-xs text-center min-h-[140px] w-full transition ${
+          theme === 'dark'
+            ? 'bg-slate-900 border-slate-700 text-slate-400'
+            : 'bg-neutral-50 border-neutral-300 text-neutral-400'
+        } ${className}`}
+      >
         <span>📈 Chart image expired or unavailable</span>
       </div>
     );
   }
-  return <img src={src} alt={alt} className={className} onError={() => setError(true)} />;
+
+  return (
+    <div className="relative inline-flex items-center justify-center max-w-full">
+      <img
+        src={src}
+        alt={alt}
+        className={`${className} transition-all duration-200 rounded-lg ${
+          theme === 'dark'
+            ? 'brightness-[0.93] contrast-[1.12] invert-[0.92] hue-rotate-[180deg] shadow-inner'
+            : 'brightness-100 contrast-100'
+        }`}
+        onError={() => setError(true)}
+      />
+    </div>
+  );
 };
 
-const ChartCard: React.FC<{ chart: ReportChart; onZoom?: () => void }> = ({ chart, onZoom }) => (
-  <figure className="overflow-hidden rounded-2xl border border-neutral-200 bg-white shadow-sm flex flex-col group transition hover:border-neutral-300">
-    <div className="relative bg-white p-3 flex-1 flex items-center justify-center min-h-[220px]">
-      <ChartImage src={chart.image} alt={chart.title} className="w-full h-auto max-h-72 object-contain mx-auto" />
+const ChartCard: React.FC<{
+  chart: ReportChart;
+  theme?: 'light' | 'dark';
+  showValues?: boolean;
+  onZoom?: () => void;
+}> = ({ chart, theme = 'light', showValues = true, onZoom }) => (
+  <figure
+    className={`overflow-hidden rounded-2xl border shadow-sm flex flex-col group transition ${
+      theme === 'dark'
+        ? 'border-slate-800 bg-slate-900 hover:border-slate-700'
+        : 'border-neutral-200 bg-white hover:border-neutral-300'
+    }`}
+  >
+    <div
+      className={`relative p-3 flex-1 flex items-center justify-center min-h-[220px] transition ${
+        theme === 'dark' ? 'bg-slate-950/70' : 'bg-white'
+      }`}
+    >
+      <ChartImage
+        src={chart.image}
+        alt={chart.title}
+        theme={theme}
+        className="w-full h-auto max-h-72 object-contain mx-auto"
+      />
       {onZoom && (
         <button
           onClick={onZoom}
-          className="absolute right-3 top-3 opacity-0 group-hover:opacity-100 transition bg-neutral-900/70 hover:bg-neutral-900 text-white px-2.5 py-1.5 rounded-xl text-xs flex items-center shadow-md cursor-pointer"
-          title="Zoom Chart"
+          className={`absolute right-3 top-3 opacity-0 group-hover:opacity-100 transition px-2.5 py-1.5 rounded-xl text-xs flex items-center gap-1.5 shadow-md cursor-pointer ${
+            theme === 'dark'
+              ? 'bg-slate-800/90 hover:bg-slate-700 text-slate-100 border border-slate-700'
+              : 'bg-neutral-900/80 hover:bg-neutral-900 text-white'
+          }`}
+          title="Inspect Chart in High Resolution"
         >
-          Zoom
+          <Maximize2 className="h-3 w-3" />
+          <span>Zoom</span>
         </button>
       )}
     </div>
-    <figcaption className="border-t border-neutral-100 px-4 py-3 bg-neutral-50/50">
-      <p className="text-sm font-bold text-neutral-800">{chart.title}</p>
-      {chart.caption && <p className="mt-0.5 text-xs text-neutral-500 line-clamp-2">{chart.caption}</p>}
+    <figcaption
+      className={`border-t px-4 py-3 transition flex items-start justify-between gap-2 ${
+        theme === 'dark'
+          ? 'border-slate-800/80 bg-slate-900/90 text-slate-100'
+          : 'border-neutral-100 bg-neutral-50/50 text-neutral-800'
+      }`}
+    >
+      <div className="min-w-0 flex-1">
+        <p
+          className={`text-sm font-bold truncate ${
+            theme === 'dark' ? 'text-slate-100' : 'text-neutral-800'
+          }`}
+        >
+          {chart.title}
+        </p>
+        {chart.caption && (
+          <p
+            className={`mt-0.5 text-xs line-clamp-2 ${
+              theme === 'dark' ? 'text-slate-400' : 'text-neutral-500'
+            }`}
+          >
+            {chart.caption}
+          </p>
+        )}
+      </div>
+      {showValues && (
+        <span
+          className={`shrink-0 inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full border transition ${
+            theme === 'dark'
+              ? 'bg-indigo-950/70 border-indigo-800/70 text-indigo-300'
+              : 'bg-indigo-50 border-indigo-200 text-indigo-700'
+          }`}
+          title="On-chart data values enabled"
+        >
+          <Hash className="h-2.5 w-2.5" />
+          <span>Values On</span>
+        </span>
+      )}
     </figcaption>
   </figure>
 );

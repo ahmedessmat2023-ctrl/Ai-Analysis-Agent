@@ -35,22 +35,81 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt  # noqa: E402
 import pandas as pd  # noqa: E402
 
-PALETTE = [
-    "#4F46E5", "#06B6D4", "#10B981", "#F59E0B", "#EF4444",
-    "#8B5CF6", "#EC4899", "#14B8A6", "#F97316", "#3B82F6",
-]
+THEME_CONFIGS = {
+    "light": {
+        "bg_color": "#FFFFFF",
+        "card_bg": "#FFFFFF",
+        "text_primary": "#0F172A",
+        "text_secondary": "#475569",
+        "grid_color": "#E2E8F0",
+        "spine_color": "#CBD5E1",
+        "pie_edge": "#FFFFFF",
+        "scatter_edge": "#FFFFFF",
+        "heatmap_cmap": "viridis",
+        "palette": [
+            "#4338CA", "#0284C7", "#059669", "#D97706", "#DC2626",
+            "#7C3AED", "#DB2777", "#0D9488", "#EA580C", "#2563EB",
+        ],
+    },
+    "dark": {
+        "bg_color": "#0F172A",
+        "card_bg": "#1E293B",
+        "text_primary": "#F8FAFC",
+        "text_secondary": "#94A3B8",
+        "grid_color": "#334155",
+        "spine_color": "#475569",
+        "pie_edge": "#0F172A",
+        "scatter_edge": "#0F172A",
+        "heatmap_cmap": "magma",
+        "palette": [
+            "#818CF8", "#38BDF8", "#34D399", "#FBBF24", "#F87171",
+            "#C084FC", "#F472B6", "#2DD4BF", "#FB923C", "#60A5FA",
+        ],
+    },
+}
 
 
-def style_axes(ax, title, xlabel, ylabel):
+def style_axes(ax, title, xlabel, ylabel, theme_cfg):
+    text_primary = theme_cfg["text_primary"]
+    text_secondary = theme_cfg["text_secondary"]
+    grid_color = theme_cfg["grid_color"]
+    spine_color = theme_cfg["spine_color"]
+
+    ax.set_facecolor(theme_cfg["card_bg"])
+
     if title:
-        ax.set_title(title, fontsize=14, fontweight="bold", pad=12)
+        ax.set_title(title, fontsize=14, fontweight="bold", pad=12, color=text_primary)
     if xlabel:
-        ax.set_xlabel(xlabel, fontsize=11)
+        ax.set_xlabel(xlabel, fontsize=11, fontweight="medium", color=text_secondary)
     if ylabel:
-        ax.set_ylabel(ylabel, fontsize=11)
+        ax.set_ylabel(ylabel, fontsize=11, fontweight="medium", color=text_secondary)
+
+    ax.tick_params(colors=text_secondary, which="both", labelsize=9.5)
+    for spine in ax.spines.values():
+        spine.set_color(spine_color)
     ax.spines["top"].set_visible(False)
     ax.spines["right"].set_visible(False)
-    ax.grid(axis="y", alpha=0.3, linestyle="--")
+    ax.grid(axis="y", color=grid_color, alpha=0.6, linestyle="--", linewidth=0.8)
+
+
+def format_data_label(val):
+    """Format numeric data values cleanly for on-chart data labels."""
+    if pd.isna(val):
+        return ""
+    try:
+        num = float(val)
+        abs_num = abs(num)
+        if abs_num >= 1_000_000_000:
+            return f"{num/1_000_000_000:.2f}B".rstrip("0").rstrip(".") + "B"
+        if abs_num >= 1_000_000:
+            return f"{num/1_000_000:.2f}M".rstrip("0").rstrip(".") + "M"
+        if abs_num >= 10_000:
+            return f"{num/1_000:.1f}k"
+        if num == int(num):
+            return f"{int(num):,}"
+        return f"{num:,.2f}".rstrip("0").rstrip(".")
+    except Exception:
+        return str(val)
 
 
 def main():
@@ -68,8 +127,25 @@ def main():
     parser.add_argument("--xlabel", default=None)
     parser.add_argument("--ylabel", default=None)
     parser.add_argument("--top", type=int, default=None, help="Keep top N rows by --y")
+    parser.add_argument(
+        "--show-values",
+        "--show_values",
+        dest="show_values",
+        action="store_true",
+        default=False,
+        help="Display data values directly on the bars or lines for improved readability",
+    )
+    parser.add_argument(
+        "--theme",
+        default="light",
+        choices=["light", "dark"],
+        help="Visual theme ('light' or 'dark') for high-contrast presentation",
+    )
     parser.add_argument("--output", required=True, help="Output PNG relative to workspace")
     args = parser.parse_args()
+
+    theme_cfg = THEME_CONFIGS.get(args.theme, THEME_CONFIGS["light"])
+    palette = theme_cfg["palette"]
 
     data_path = os.path.join(args.workspace, args.data)
     if not os.path.exists(data_path):
@@ -95,24 +171,51 @@ def main():
     out_path = os.path.join(args.workspace, args.output)
     os.makedirs(os.path.dirname(out_path), exist_ok=True)
 
-    plt.rcParams.update({"figure.autolayout": True, "font.size": 11})
-    fig, ax = plt.subplots(figsize=(9, 5.2), dpi=130)
+    plt.rcParams.update({
+        "figure.autolayout": True,
+        "font.size": 11,
+        "text.color": theme_cfg["text_primary"],
+        "axes.labelcolor": theme_cfg["text_secondary"],
+        "xtick.color": theme_cfg["text_secondary"],
+        "ytick.color": theme_cfg["text_secondary"],
+    })
+    fig, ax = plt.subplots(figsize=(9, 5.2), dpi=130, facecolor=theme_cfg["bg_color"])
 
     try:
         if args.type == "bar":
             x_series = df[x_col].astype(str) if x_col and x_col in df.columns else df.iloc[:, 0].astype(str)
             y_series = df[y_cols[0]].fillna(0) if y_cols and y_cols[0] in df.columns else df.iloc[:, 1].fillna(0)
-            ax.bar(x_series, y_series, color=PALETTE[0])
+            bars = ax.bar(x_series, y_series, color=palette[0], edgecolor=theme_cfg["pie_edge"], linewidth=0.5)
+            if args.show_values:
+                labels = [format_data_label(v) for v in y_series]
+                ax.bar_label(
+                    bars,
+                    labels=labels,
+                    padding=3,
+                    color=theme_cfg["text_primary"],
+                    fontsize=8.5,
+                    fontweight="bold",
+                )
             plt.xticks(rotation=45, ha="right")
-            style_axes(ax, args.title, args.xlabel or x_col or "Category", args.ylabel or (y_cols[0] if y_cols else "Value"))
+            style_axes(ax, args.title, args.xlabel or x_col or "Category", args.ylabel or (y_cols[0] if y_cols else "Value"), theme_cfg)
 
         elif args.type == "barh":
             df_plot = df.iloc[::-1]  # largest on top
             x_series = df_plot[x_col].astype(str) if x_col and x_col in df_plot.columns else df_plot.iloc[:, 0].astype(str)
             y_series = df_plot[y_cols[0]].fillna(0) if y_cols and y_cols[0] in df_plot.columns else df_plot.iloc[:, 1].fillna(0)
-            ax.barh(x_series, y_series, color=PALETTE[1])
-            style_axes(ax, args.title, args.xlabel or (y_cols[0] if y_cols else "Value"), args.ylabel or x_col or "Category")
-            ax.grid(axis="x", alpha=0.3, linestyle="--")
+            bars = ax.barh(x_series, y_series, color=palette[1], edgecolor=theme_cfg["pie_edge"], linewidth=0.5)
+            if args.show_values:
+                labels = [format_data_label(v) for v in y_series]
+                ax.bar_label(
+                    bars,
+                    labels=labels,
+                    padding=4,
+                    color=theme_cfg["text_primary"],
+                    fontsize=8.5,
+                    fontweight="bold",
+                )
+            style_axes(ax, args.title, args.xlabel or (y_cols[0] if y_cols else "Value"), args.ylabel or x_col or "Category", theme_cfg)
+            ax.grid(axis="x", color=theme_cfg["grid_color"], alpha=0.6, linestyle="--", linewidth=0.8)
 
         elif args.type == "line":
             x_series = df[x_col] if x_col and x_col in df.columns else df.iloc[:, 0]
@@ -120,56 +223,99 @@ def main():
             if not valid_y_cols and len(df.columns) > 1:
                 valid_y_cols = [df.columns[1]]
             for i, col in enumerate(valid_y_cols):
+                y_vals = df[col].fillna(0)
                 ax.plot(
-                    x_series, df[col].fillna(0), marker="o", markersize=4,
-                    linewidth=2, color=PALETTE[i % len(PALETTE)], label=col,
+                    x_series, y_vals, marker="o", markersize=4.5,
+                    linewidth=2.2, color=palette[i % len(palette)], label=col,
                 )
+                if args.show_values:
+                    for x_idx, (x_val, y_val) in enumerate(zip(x_series, y_vals)):
+                        lbl = format_data_label(y_val)
+                        ax.annotate(
+                            lbl,
+                            (x_idx, y_val),
+                            textcoords="offset points",
+                            xytext=(0, 6),
+                            ha="center",
+                            va="bottom",
+                            fontsize=8,
+                            fontweight="bold",
+                            color=theme_cfg["text_primary"],
+                            bbox=dict(
+                                boxstyle="round,pad=0.18",
+                                facecolor=theme_cfg["card_bg"],
+                                edgecolor=theme_cfg["spine_color"],
+                                alpha=0.9,
+                                linewidth=0.5,
+                            ),
+                        )
             plt.xticks(rotation=45, ha="right")
-            style_axes(ax, args.title, args.xlabel or x_col or "Index", args.ylabel or (valid_y_cols[0] if len(valid_y_cols) == 1 else "Value"))
+            style_axes(ax, args.title, args.xlabel or x_col or "Index", args.ylabel or (valid_y_cols[0] if len(valid_y_cols) == 1 else "Value"), theme_cfg)
             if len(valid_y_cols) > 1:
-                ax.legend(frameon=False)
+                leg = ax.legend(frameon=True, facecolor=theme_cfg["card_bg"], edgecolor=theme_cfg["spine_color"])
+                for text in leg.get_texts():
+                    text.set_color(theme_cfg["text_primary"])
 
         elif args.type == "scatter":
             x_series = pd.to_numeric(df[x_col], errors="coerce").fillna(0) if x_col and x_col in df.columns else df.iloc[:, 0]
             y_series = df[y_cols[0]].fillna(0) if y_cols and y_cols[0] in df.columns else df.iloc[:, 1].fillna(0)
-            ax.scatter(x_series, y_series, color=PALETTE[5], alpha=0.6, edgecolors="white")
-            style_axes(ax, args.title, args.xlabel or x_col or "X", args.ylabel or (y_cols[0] if y_cols else "Y"))
+            ax.scatter(x_series, y_series, color=palette[5], alpha=0.8, edgecolors=theme_cfg["scatter_edge"], s=45)
+            if args.show_values:
+                for x_val, y_val in zip(x_series, y_series):
+                    ax.annotate(
+                        format_data_label(y_val),
+                        (x_val, y_val),
+                        textcoords="offset points",
+                        xytext=(0, 5),
+                        ha="center",
+                        va="bottom",
+                        fontsize=7.5,
+                        color=theme_cfg["text_primary"],
+                    )
+            style_axes(ax, args.title, args.xlabel or x_col or "X", args.ylabel or (y_cols[0] if y_cols else "Y"), theme_cfg)
 
         elif args.type == "pie":
             labels = df[x_col].astype(str) if x_col and x_col in df.columns else df.iloc[:, 0].astype(str)
             values = df[y_cols[0]].fillna(0) if y_cols and y_cols[0] in df.columns else df.iloc[:, 1].fillna(0)
-            # Filter positive values
             positive_mask = values > 0
             if positive_mask.any():
                 labels = labels[positive_mask]
                 values = values[positive_mask]
-            ax.pie(
+            wedges, texts, autotexts = ax.pie(
                 values, labels=labels, autopct="%1.1f%%", startangle=90,
-                colors=PALETTE, wedgeprops={"edgecolor": "white"},
+                colors=palette, wedgeprops={"edgecolor": theme_cfg["pie_edge"], "linewidth": 1.2},
             )
+            for t in texts:
+                t.set_color(theme_cfg["text_primary"])
+                t.set_fontsize(10)
+            for at in autotexts:
+                at.set_color(theme_cfg["text_primary"] if args.theme == "dark" else "#FFFFFF")
+                at.set_fontweight("bold")
+                at.set_fontsize(9.5)
             ax.axis("equal")
             if args.title:
-                ax.set_title(args.title, fontsize=14, fontweight="bold", pad=12)
+                ax.set_title(args.title, fontsize=14, fontweight="bold", pad=12, color=theme_cfg["text_primary"])
 
         elif args.type == "heatmap":
             matrix = df.set_index(df.columns[0])
             matrix = matrix.apply(pd.to_numeric, errors="coerce").fillna(0)
-            im = ax.imshow(matrix.values, cmap="viridis", aspect="auto")
+            im = ax.imshow(matrix.values, cmap=theme_cfg["heatmap_cmap"], aspect="auto")
             ax.set_xticks(range(len(matrix.columns)))
-            ax.set_xticklabels(matrix.columns, rotation=45, ha="right")
+            ax.set_xticklabels(matrix.columns, rotation=45, ha="right", color=theme_cfg["text_secondary"])
             ax.set_yticks(range(len(matrix.index)))
-            ax.set_yticklabels(matrix.index)
-            fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+            ax.set_yticklabels(matrix.index, color=theme_cfg["text_secondary"])
+            cbar = fig.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
+            cbar.ax.tick_params(colors=theme_cfg["text_secondary"])
+            cbar.outline.set_edgecolor(theme_cfg["spine_color"])
             if args.title:
-                ax.set_title(args.title, fontsize=14, fontweight="bold", pad=12)
+                ax.set_title(args.title, fontsize=14, fontweight="bold", pad=12, color=theme_cfg["text_primary"])
 
-        fig.savefig(out_path, bbox_inches="tight", facecolor="white")
+        fig.savefig(out_path, bbox_inches="tight", facecolor=theme_cfg["bg_color"], edgecolor="none")
         plt.close(fig)
-        print(f"Chart saved to {out_path}")
+        print(f"Chart saved to {out_path} (theme: {args.theme})")
     except Exception as e:  # noqa: BLE001
         plt.close(fig)
         print(f"ERROR: Failed to render chart: {e}")
-        # Return 0 so chart failures do not crash analysis pipelines
         sys.exit(0)
 
 
