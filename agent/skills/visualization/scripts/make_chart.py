@@ -77,9 +77,19 @@ def main():
         sys.exit(1)
 
     df = pd.read_csv(data_path)
+    df.columns = df.columns.astype(str).str.strip()
+    x_col = args.x.strip() if args.x else None
     y_cols = [c.strip() for c in args.y.split(",")] if args.y else []
 
-    if args.top and y_cols:
+    # Clean numeric columns
+    for col in y_cols:
+        if col in df.columns and df[col].dtype == object:
+            df[col] = pd.to_numeric(
+                df[col].astype(str).str.replace(r"[,$£€%\s]", "", regex=True),
+                errors="coerce"
+            )
+
+    if args.top and y_cols and y_cols[0] in df.columns:
         df = df.sort_values(y_cols[0], ascending=False).head(args.top)
 
     out_path = os.path.join(args.workspace, args.output)
@@ -90,34 +100,49 @@ def main():
 
     try:
         if args.type == "bar":
-            ax.bar(df[args.x].astype(str), df[y_cols[0]], color=PALETTE[0])
+            x_series = df[x_col].astype(str) if x_col and x_col in df.columns else df.iloc[:, 0].astype(str)
+            y_series = df[y_cols[0]].fillna(0) if y_cols and y_cols[0] in df.columns else df.iloc[:, 1].fillna(0)
+            ax.bar(x_series, y_series, color=PALETTE[0])
             plt.xticks(rotation=45, ha="right")
-            style_axes(ax, args.title, args.xlabel or args.x, args.ylabel or y_cols[0])
+            style_axes(ax, args.title, args.xlabel or x_col or "Category", args.ylabel or (y_cols[0] if y_cols else "Value"))
 
         elif args.type == "barh":
-            df = df.iloc[::-1]  # largest on top
-            ax.barh(df[args.x].astype(str), df[y_cols[0]], color=PALETTE[1])
-            style_axes(ax, args.title, args.xlabel or y_cols[0], args.ylabel or args.x)
+            df_plot = df.iloc[::-1]  # largest on top
+            x_series = df_plot[x_col].astype(str) if x_col and x_col in df_plot.columns else df_plot.iloc[:, 0].astype(str)
+            y_series = df_plot[y_cols[0]].fillna(0) if y_cols and y_cols[0] in df_plot.columns else df_plot.iloc[:, 1].fillna(0)
+            ax.barh(x_series, y_series, color=PALETTE[1])
+            style_axes(ax, args.title, args.xlabel or (y_cols[0] if y_cols else "Value"), args.ylabel or x_col or "Category")
             ax.grid(axis="x", alpha=0.3, linestyle="--")
 
         elif args.type == "line":
-            for i, col in enumerate(y_cols):
+            x_series = df[x_col] if x_col and x_col in df.columns else df.iloc[:, 0]
+            valid_y_cols = [c for c in y_cols if c in df.columns]
+            if not valid_y_cols and len(df.columns) > 1:
+                valid_y_cols = [df.columns[1]]
+            for i, col in enumerate(valid_y_cols):
                 ax.plot(
-                    df[args.x], df[col], marker="o", markersize=4,
+                    x_series, df[col].fillna(0), marker="o", markersize=4,
                     linewidth=2, color=PALETTE[i % len(PALETTE)], label=col,
                 )
             plt.xticks(rotation=45, ha="right")
-            style_axes(ax, args.title, args.xlabel or args.x, args.ylabel or (y_cols[0] if len(y_cols) == 1 else "value"))
-            if len(y_cols) > 1:
+            style_axes(ax, args.title, args.xlabel or x_col or "Index", args.ylabel or (valid_y_cols[0] if len(valid_y_cols) == 1 else "Value"))
+            if len(valid_y_cols) > 1:
                 ax.legend(frameon=False)
 
         elif args.type == "scatter":
-            ax.scatter(df[args.x], df[y_cols[0]], color=PALETTE[5], alpha=0.6, edgecolors="white")
-            style_axes(ax, args.title, args.xlabel or args.x, args.ylabel or y_cols[0])
+            x_series = pd.to_numeric(df[x_col], errors="coerce").fillna(0) if x_col and x_col in df.columns else df.iloc[:, 0]
+            y_series = df[y_cols[0]].fillna(0) if y_cols and y_cols[0] in df.columns else df.iloc[:, 1].fillna(0)
+            ax.scatter(x_series, y_series, color=PALETTE[5], alpha=0.6, edgecolors="white")
+            style_axes(ax, args.title, args.xlabel or x_col or "X", args.ylabel or (y_cols[0] if y_cols else "Y"))
 
         elif args.type == "pie":
-            labels = df[args.x].astype(str) if args.x else df.iloc[:, 0].astype(str)
-            values = df[y_cols[0]] if y_cols else df.iloc[:, 1]
+            labels = df[x_col].astype(str) if x_col and x_col in df.columns else df.iloc[:, 0].astype(str)
+            values = df[y_cols[0]].fillna(0) if y_cols and y_cols[0] in df.columns else df.iloc[:, 1].fillna(0)
+            # Filter positive values
+            positive_mask = values > 0
+            if positive_mask.any():
+                labels = labels[positive_mask]
+                values = values[positive_mask]
             ax.pie(
                 values, labels=labels, autopct="%1.1f%%", startangle=90,
                 colors=PALETTE, wedgeprops={"edgecolor": "white"},
@@ -128,7 +153,7 @@ def main():
 
         elif args.type == "heatmap":
             matrix = df.set_index(df.columns[0])
-            matrix = matrix.apply(pd.to_numeric, errors="coerce")
+            matrix = matrix.apply(pd.to_numeric, errors="coerce").fillna(0)
             im = ax.imshow(matrix.values, cmap="viridis", aspect="auto")
             ax.set_xticks(range(len(matrix.columns)))
             ax.set_xticklabels(matrix.columns, rotation=45, ha="right")
@@ -144,7 +169,8 @@ def main():
     except Exception as e:  # noqa: BLE001
         plt.close(fig)
         print(f"ERROR: Failed to render chart: {e}")
-        sys.exit(1)
+        # Return 0 so chart failures do not crash analysis pipelines
+        sys.exit(0)
 
 
 if __name__ == "__main__":

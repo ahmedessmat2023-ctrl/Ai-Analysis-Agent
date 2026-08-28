@@ -39,11 +39,40 @@ import pandas as pd
 MAX_TABLE_ROWS = 20
 
 
+def sanitize_for_json(obj):
+    """Recursively convert NaN/Infinity and non-standard types to JSON-safe primitives."""
+    if obj is None:
+        return None
+    if isinstance(obj, float):
+        if pd.isna(obj) or np.isinf(obj):
+            return None
+        return obj
+    if isinstance(obj, (np.integer, int)):
+        return int(obj)
+    if isinstance(obj, (np.floating, float)):
+        val = float(obj)
+        return None if (pd.isna(val) or np.isinf(val)) else val
+    if isinstance(obj, (np.bool_, bool)):
+        return bool(obj)
+    if isinstance(obj, (pd.Timestamp, datetime)):
+        return obj.isoformat()
+    if isinstance(obj, dict):
+        return {str(k): sanitize_for_json(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple, np.ndarray, pd.Series)):
+        return [sanitize_for_json(x) for x in obj]
+    if pd.isna(obj):
+        return None
+    return obj
+
+
 def load_profile(workspace):
     path = os.path.join(workspace, "data", "profile.json")
     if os.path.exists(path):
-        with open(path) as f:
-            return json.load(f)
+        try:
+            with open(path) as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"Warning: could not read profile.json: {e}")
     return {}
 
 
@@ -56,7 +85,10 @@ def load_analysis_tables(workspace):
     for path in sorted(glob.glob(os.path.join(analysis_dir, "*.csv"))):
         name = os.path.splitext(os.path.basename(path))[0]
         try:
-            tables[name] = pd.read_csv(path)
+            df = pd.read_csv(path)
+            # Strip whitespace from column names for robust processing
+            df.columns = df.columns.astype(str).str.strip()
+            tables[name] = df.reset_index(drop=True)
         except Exception as e:  # noqa: BLE001
             print(f"Warning: could not read {path}: {e}")
     return tables
@@ -85,11 +117,14 @@ def list_charts(workspace, charts_arg):
 def build_display_tables(tables):
     out = []
     for name, df in tables.items():
-        preview = df.head(MAX_TABLE_ROWS)
+        preview = df.head(MAX_TABLE_ROWS).reset_index(drop=True)
+        # Convert values safely row by row
+        raw_rows = preview.values.tolist()
+        clean_rows = sanitize_for_json(raw_rows)
         out.append({
             "title": name.replace("_", " ").title(),
             "columns": [str(c) for c in preview.columns],
-            "rows": preview.astype(object).where(pd.notna(preview), None).values.tolist(),
+            "rows": clean_rows,
             "caption": "",
         })
     return out
@@ -97,10 +132,19 @@ def build_display_tables(tables):
 
 def format_value(value):
     """Format a scalar for a concise dashboard metric."""
-    if pd.isna(value):
+    if isinstance(value, (pd.Series, list, tuple, np.ndarray)):
+        if len(value) > 0:
+            value = value[0]
+        else:
+            return "N/A"
+    if pd.isna(value) or value is None:
         return "N/A"
-    if isinstance(value, float):
+    if isinstance(value, (float, np.floating)):
+        if np.isinf(value):
+            return "N/A"
         return f"{value:,.2f}".rstrip("0").rstrip(".")
+    if isinstance(value, (int, np.integer)):
+        return f"{value:,}"
     return str(value)
 
 
@@ -123,7 +167,7 @@ def build_insights(tables):
         name = str(column).lower()
         if name.startswith("total_") or "total" in name:
             return 0
-        if any(token in name for token in ("value", "revenue", "sales", "profit", "distance")):
+        if any(token in name for token in ("value", "revenue", "sales", "profit", "distance", "achievement", "rate")):
             return 1
         if name.startswith("avg_") or "average" in name or "mean" in name:
             return 2
@@ -136,24 +180,24 @@ def build_insights(tables):
             break
         if "correlation" in name.lower():
             continue
-        numeric_cols = list(df.select_dtypes(include="number").columns)
+        # Ensure fresh clean copy with unique index
+        df_clean = df.reset_index(drop=True)
+        numeric_cols = list(df_clean.select_dtypes(include="number").columns)
         if not numeric_cols:
             continue
-        label_col = df.columns[0]
+        label_col = df_clean.columns[0]
         metric_cols = [column for column in numeric_cols if column != label_col]
         ranked_metrics = sorted(metric_cols or numeric_cols, key=metric_priority)
         for value_col in ranked_metrics[:2]:
             if len(insights) >= 6:
                 break
-            valid_values = df[value_col].dropna()
-            if valid_values.empty:
+            valid_mask = df_clean[value_col].notna()
+            if not valid_mask.any():
                 continue
-            row = df.loc[valid_values.idxmax()]
-            label = (
-                format_value(row[label_col])
-                if label_col != value_col
-                else name.replace("_", " ")
-            )
+            max_idx = df_clean.loc[valid_mask, value_col].idxmax()
+            row = df_clean.loc[max_idx]
+            raw_label = row[label_col] if label_col != value_col else name.replace("_", " ")
+            label = format_value(raw_label)
             value = format_value(row[value_col])
             readable_metric = str(value_col).replace("_", " ")
             insights.append({
@@ -275,9 +319,10 @@ def main():
     output_path = os.path.join(args.workspace, "data", "report.json")
     os.makedirs(os.path.dirname(output_path), exist_ok=True)
     report = build_report(args.question, args.dataset_name, profile, tables, charts)
+    clean_report = sanitize_for_json(report)
 
     with open(output_path, "w") as f:
-        json.dump(report, f, indent=2, default=str)
+        json.dump(clean_report, f, indent=2, default=str)
     print(f"\nReport saved to {output_path}", flush=True)
     print(f"  Insights: {len(report.get('insights', []))}, "
           f"Charts: {len(report.get('charts', []))}, "

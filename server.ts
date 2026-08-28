@@ -85,6 +85,41 @@ function extractTarInMemory(tarBuffer: Buffer): Record<string, Buffer> {
   return files;
 }
 
+function safeJsonParse(jsonString: string): any {
+  const sanitized = jsonString
+    .replace(/:\s*NaN\b/g, ": null")
+    .replace(/\[\s*NaN\b/g, "[null")
+    .replace(/,\s*NaN\b/g, ", null")
+    .replace(/\bNaN\b/g, "null")
+    .replace(/\bInfinity\b/g, "null")
+    .replace(/\b-Infinity\b/g, "null");
+  return JSON.parse(sanitized);
+}
+
+function parseCsvLine(line: string): string[] {
+  const result: string[] = [];
+  let cur = "";
+  let inQuotes = false;
+  for (let i = 0; i < line.length; i++) {
+    const char = line[i];
+    if (char === '"') {
+      if (inQuotes && line[i + 1] === '"') {
+        cur += '"';
+        i++;
+      } else {
+        inQuotes = !inQuotes;
+      }
+    } else if (char === "," && !inQuotes) {
+      result.push(cur.trim());
+      cur = "";
+    } else {
+      cur += char;
+    }
+  }
+  result.push(cur.trim());
+  return result;
+}
+
 function extractEnvironmentId(interaction: any): string | undefined {
   if (!interaction || typeof interaction !== "object") return undefined;
   const environment = interaction.environment;
@@ -1078,7 +1113,7 @@ for f in files:
                 normalized === "report.json"
               ) {
                 try {
-                  report = JSON.parse(fileContent.toString("utf8"));
+                  report = safeJsonParse(fileContent.toString("utf8"));
                 } catch (err) {
                   console.error(
                     "Failed to parse report.json from memory:",
@@ -1143,12 +1178,10 @@ for f in files:
                       .map((l) => l.trim())
                       .filter(Boolean);
                     if (lines.length > 0) {
-                      const headers = lines[0]
-                        .split(",")
+                      const headers = parseCsvLine(lines[0])
                         .map((h) => h.replace(/^["']|["']$/g, ""));
                       const rows = lines.slice(1, 21).map((line) => {
-                        return line
-                          .split(",")
+                        return parseCsvLine(line)
                           .map((val) => val.replace(/^["']|["']$/g, ""));
                       });
                       const filename =
