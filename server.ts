@@ -2,15 +2,11 @@ import dotenv from "dotenv";
 // Load local environment overrides (.env.local takes precedence over .env).
 // In hosted environments (e.g. AI Studio) the API key is injected directly,
 // so a missing file here is fine.
-dotenv.config({ path: [".env.local", ".env"] });
+dotenv.config({ path: [".env.local", ".env", ".env.example"] });
 
 import express from "express";
 import path from "path";
-import {
-  createInteraction,
-  streamInteraction,
-  API_BASE_URL,
-} from "./server/lib/agentClient.ts";
+import { getProvider, API_BASE_URL } from "./server/lib/agentAdapter.ts";
 import { extractJsonBlocks } from "./server/lib/jsonExtractor.ts";
 import fs from "fs";
 import crypto from "crypto";
@@ -812,10 +808,12 @@ for f in files:
         `[analyze] Retrieved GCS access token: ${gcsToken ? "yes (length: " + gcsToken.length + ")" : "no"}`,
       );
 
+      const provider = getProvider();
+      console.log(`[analyze] Using provider: ${provider.getProviderName()}`);
       console.log(
         `[analyze] Calling createInteraction with prompt: "${prompt.substring(0, 100)}..."`,
       );
-      const response = await createInteraction({
+      const response = await provider.createInteraction({
         prompt,
         stream: true,
         inlineSources: isFollowUp
@@ -829,13 +827,13 @@ for f in files:
       });
 
       console.log(
-        `[analyze] Gemini API responded. HTTP Status: ${response.status} ${response.statusText}`,
+        `[analyze] ${provider.getProviderName()} API responded. HTTP Status: ${response.status} ${response.statusText}`,
       );
 
       if (!response.ok) {
         const errorText = await response.text();
         console.error(
-          `[analyze] Gemini API Non-2xx response. Error Payload: ${errorText}`,
+          `[analyze] ${provider.getProviderName()} API Non-2xx response. Error Payload: ${errorText}`,
         );
 
         let displayMessage = `Agent API error: ${response.status} - ${errorText}`;
@@ -864,7 +862,7 @@ for f in files:
           displayMessage.toLowerCase().includes("not found or not accessible");
 
         if (isQuotaError) {
-          displayMessage = `Gemini API Quota Limit Reached: ${displayMessage}. The shared free-tier Google Gemini API Key has run out of request quota. To resolve this, go to Settings > Secrets inside AI Studio to verify your personal Gemini API key or set up billing.`;
+          displayMessage = `API Quota Limit Reached: ${displayMessage}. The shared free-tier Google Gemini API Key has run out of request quota. To resolve this, go to Settings > Secrets inside AI Studio to verify your personal Gemini API key or configure an alternative provider like Ollama/NIM.`;
         } else if (isEnvNotFoundError) {
           displayMessage = `The previous analysis session has expired or the remote environment has been recycled due to inactivity. Please start a fresh analysis session by uploading your CSV files again.`;
         }
@@ -883,7 +881,7 @@ for f in files:
       let reportArtifactReady = false;
 
       let eventCount = 0;
-      for await (const event of streamInteraction(response)) {
+      for await (const event of provider.streamInteraction(response)) {
         eventCount++;
         console.log(
           `[analyze] SSE yields streaming event #${eventCount}: type="${event.type}"`,
