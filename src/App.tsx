@@ -11,6 +11,7 @@ import type {
 import {
   LogIn, LogOut, User as UserIcon, Check, Sparkles, Presentation, Database,
   Sun, Moon, Maximize2, Layers, Hash, Tag, Eye, EyeOff, RotateCcw, Filter,
+  Bot, Terminal, Menu,
 } from 'lucide-react';
 import {
   ChartCard,
@@ -19,6 +20,15 @@ import {
   InteractiveChartRenderer,
   extractChartData,
 } from './components/InteractiveChart';
+import { DataStructureInspector } from './components/DataStructureInspector';
+import {
+  analyzeDataStructure,
+  type DataStructureAnalysis,
+  type ProposedVisualization,
+} from './utils/dataStructureAnalyzer';
+import { SAMPLE_DATASETS, type SampleDataset } from './utils/sampleDatasets';
+import { MobileReportsNav, type DashboardTab } from './components/MobileReportsNav';
+import { MobileAgentDrawer } from './components/MobileAgentDrawer';
 
 const PixelatedHeader: React.FC = () => {
   return (
@@ -219,6 +229,7 @@ function environmentIdFromInteraction(interaction: any): string | null {
 const App: React.FC = () => {
   const [files, setFiles] = useState<UploadedFile[]>([]);
   const [question, setQuestion] = useState('');
+  const [selectedVisualizationId, setSelectedVisualizationId] = useState<string | null>(null);
 
   const [status, setStatus] = useState<Status>('idle');
   const [stage, setStage] = useState('');
@@ -231,9 +242,10 @@ const App: React.FC = () => {
   const [uploadSessionId, setUploadSessionId] = useState(createUploadSessionId);
   const [chatMessages, setChatMessages] = useState<ChatMessage[]>([]);
   const [viewedMessageId, setViewedMessageId] = useState<string | null>(null);
+  const [isMobileNavOpen, setIsMobileNavOpen] = useState(false);
+  const [isMobileAgentDrawerOpen, setIsMobileAgentDrawerOpen] = useState(false);
+  const [dashboardTab, setDashboardTab] = useState<DashboardTab>('overview');
   const activeMessageIdRef = useRef<string | null>(null);
-
-
 
   const abortRef = useRef<AbortController | null>(null);
   const generationIdRef = useRef<string | null>(null);
@@ -246,6 +258,35 @@ const App: React.FC = () => {
 
   const examples = UPLOAD_EXAMPLES;
   const canRun = status !== 'running' && question.trim() !== '' && files.length > 0;
+
+  // Automated Data Structure Analysis (numeric vs categorical columns, distributions, proposed charts)
+  const dataStructureAnalysis = useMemo<DataStructureAnalysis | null>(() => {
+    if (files.length === 0) return null;
+    const primaryFile = files.find((f) => f.content && f.content.trim().length > 0) || files[0];
+    if (primaryFile && primaryFile.content) {
+      return analyzeDataStructure(primaryFile.content, primaryFile.name);
+    }
+    return null;
+  }, [files]);
+
+  const handleSelectSample = useCallback((sample: SampleDataset) => {
+    const newFile: UploadedFile = {
+      name: sample.name,
+      content: sample.content,
+      size: sample.content.length,
+      isLocal: true,
+    };
+    setFiles([newFile]);
+    setErrorMsg(null);
+  }, []);
+
+  const handleSelectVisualization = useCallback((proposal: ProposedVisualization) => {
+    setSelectedVisualizationId(proposal.id);
+  }, []);
+
+  const handleApplyQuestion = useCallback((suggestedQuestion: string) => {
+    setQuestion(suggestedQuestion);
+  }, []);
 
   const addFiles = useCallback(async (fileList: FileList | File[]) => {
     const csvs = Array.from(fileList).filter((f) => /\.csv$/i.test(f.name));
@@ -520,6 +561,13 @@ const App: React.FC = () => {
 
     if (!isFollowUp) {
       payload.files = files;
+      if (dataStructureAnalysis) {
+        const recsSummary = `${dataStructureAnalysis.summarySentence}\nProposed Visualizations:\n` +
+          dataStructureAnalysis.proposedVisualizations
+            .map((p) => `• [${p.title} - ${p.badge} (${p.suitabilityScore}% match)]: ${p.rationale} (Suggested inquiry: "${p.suggestedQuestion}")`)
+            .join('\n');
+        payload.structureRecommendations = recsSummary;
+      }
     }
 
     try {
@@ -756,6 +804,9 @@ const App: React.FC = () => {
     setEnvironmentId(null);
     setChatMessages([]);
     setViewedMessageId(null);
+    setIsMobileNavOpen(false);
+    setIsMobileAgentDrawerOpen(false);
+    setDashboardTab('overview');
     activeMessageIdRef.current = null;
     setFiles([]); // Clear client-side uploaded files state
     setUploadSessionId(createUploadSessionId());
@@ -801,6 +852,11 @@ const App: React.FC = () => {
                 examples={examples}
                 canRun={canRun}
                 isUploading={status === 'uploading'}
+                analysis={dataStructureAnalysis}
+                selectedVisualizationId={selectedVisualizationId}
+                onSelectVisualization={handleSelectVisualization}
+                onApplyQuestion={handleApplyQuestion}
+                onSelectSample={handleSelectSample}
                 onDragOver={(e) => {
                   e.preventDefault();
                   setDragOver(true);
@@ -828,10 +884,14 @@ const App: React.FC = () => {
                 stage={stage}
                 onStop={stop}
                 onReset={reset}
+                onOpenReportsNav={report ? () => setIsMobileNavOpen(true) : undefined}
+                onOpenAgentDrawer={() => setIsMobileAgentDrawerOpen(true)}
+                reportCount={chatMessages.filter(m => m.report).length || (report ? 1 : 0)}
               />
               {errorMsg && <ErrorBanner message={errorMsg} />}
               <div className="flex flex-col lg:flex-row gap-6 items-start">
-                <div className="w-full lg:w-[360px] xl:w-[420px] shrink-0 lg:sticky lg:top-6">
+                {/* Desktop Sticky Agent Panel */}
+                <div className="hidden lg:block w-full lg:w-[360px] xl:w-[420px] shrink-0 lg:sticky lg:top-6">
                   <AgentPanel
                     messages={chatMessages}
                     logs={logs}
@@ -844,21 +904,73 @@ const App: React.FC = () => {
                     datasetName={datasetName}
                   />
                 </div>
+
+                {/* Main Dashboard / Report View */}
                 <div className="flex-1 w-full min-w-0">
                   {report ? (
-                    <ReportView report={report} />
+                    <ReportView
+                      report={report}
+                      activeTab={dashboardTab}
+                      onTabChange={setDashboardTab}
+                      onOpenMobileNav={() => setIsMobileNavOpen(true)}
+                      onOpenAgentDrawer={() => setIsMobileAgentDrawerOpen(true)}
+                      agentStatus={status}
+                    />
                   ) : (
                     status === 'running' && (
                       <div className="flex h-[60vh] flex-col items-center justify-center rounded-2xl border border-dashed border-neutral-300 bg-neutral-50/50 p-8 text-center shadow-sm">
-                        <p className="text-base font-medium text-neutral-700">Report will be generated here</p>
+                        <div className="h-12 w-12 rounded-2xl bg-blue-50 text-io-blue flex items-center justify-center mb-3">
+                          <Bot className="h-6 w-6 animate-bounce" />
+                        </div>
+                        <p className="text-base font-semibold text-neutral-800">Agent is exploring your dataset</p>
                         <p className="mt-1.5 max-w-sm text-sm text-neutral-500">
-                          The agent is exploring the data and running your analysis in the background. Your final report and charts will appear in this space when complete.
+                          The agent is running code and analyzing correlations. Your interactive dashboard with charts, KPI cards, and key findings will appear here shortly.
                         </p>
+                        <button
+                          type="button"
+                          onClick={() => setIsMobileAgentDrawerOpen(true)}
+                          className="lg:hidden mt-4 inline-flex items-center gap-2 rounded-xl bg-neutral-900 px-4 py-2 text-xs font-semibold text-white shadow-sm hover:bg-neutral-800"
+                        >
+                          <Bot className="h-4 w-4" />
+                          <span>View Live Agent Stream</span>
+                        </button>
                       </div>
                     )
                   )}
                 </div>
               </div>
+
+              {/* Mobile Drawer-Based Agent Activity View */}
+              <MobileAgentDrawer
+                isOpen={isMobileAgentDrawerOpen}
+                onOpen={() => setIsMobileAgentDrawerOpen(true)}
+                onClose={() => setIsMobileAgentDrawerOpen(false)}
+                messages={chatMessages}
+                logs={logs}
+                status={status}
+                stage={stage}
+                viewedMessageId={viewedMessageId}
+                onSelectMessage={selectMessage}
+                onSendFollowUp={(text) => runAnalysis(text)}
+                report={report}
+                datasetName={datasetName}
+              />
+
+              {/* Mobile Collapsible Side-Navigation for Reports */}
+              {report && (
+                <MobileReportsNav
+                  isOpen={isMobileNavOpen}
+                  onClose={() => setIsMobileNavOpen(false)}
+                  report={report}
+                  chatMessages={chatMessages}
+                  viewedMessageId={viewedMessageId}
+                  onSelectMessage={selectMessage}
+                  activeTab={dashboardTab}
+                  onSelectTab={setDashboardTab}
+                  onNewAnalysis={reset}
+                  datasetName={datasetName}
+                />
+              )}
             </motion.div>
           )}
         </AnimatePresence>
@@ -876,6 +988,11 @@ interface SetupProps {
   examples: string[];
   canRun: boolean;
   isUploading?: boolean;
+  analysis: DataStructureAnalysis | null;
+  selectedVisualizationId: string | null;
+  onSelectVisualization: (proposal: ProposedVisualization) => void;
+  onApplyQuestion: (suggestedQuestion: string) => void;
+  onSelectSample: (sample: SampleDataset) => void;
   onDragOver: (e: React.DragEvent) => void;
   onDragLeave: () => void;
   onDrop: (e: React.DragEvent) => void;
@@ -888,6 +1005,7 @@ interface SetupProps {
 
 const SetupPanel: React.FC<SetupProps> = ({
   files, dragOver, question, examples, canRun, isUploading = false,
+  analysis, selectedVisualizationId, onSelectVisualization, onApplyQuestion, onSelectSample,
   onDragOver, onDragLeave, onDrop, onPickFiles, onAddGcsUri, onRemoveFile,
   onQuestionChange, onRun
 }) => {
@@ -914,9 +1032,33 @@ const SetupPanel: React.FC<SetupProps> = ({
       <div className="space-y-4">
           {/* Step 1: dataset */}
           <section className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
-            <div className="mb-3 flex items-center gap-2 text-sm font-medium text-neutral-700">
-              <span className="flex h-5 w-5 items-center justify-center rounded-full bg-neutral-900 text-[11px] text-white">1</span>
-              Choose a dataset
+            <div className="mb-3 flex items-center justify-between">
+              <div className="flex items-center gap-2 text-sm font-medium text-neutral-700">
+                <span className="flex h-5 w-5 items-center justify-center rounded-full bg-neutral-900 text-[11px] text-white">1</span>
+                Choose a dataset
+              </div>
+            </div>
+
+            {/* Quick Sample Datasets bar */}
+            <div className="mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 rounded-xl bg-neutral-50/90 border border-neutral-200/80 p-3">
+              <span className="text-xs font-semibold text-neutral-700 flex items-center gap-1.5">
+                <Sparkles className="h-3.5 w-3.5 text-indigo-500" />
+                Or try instantly with a sample dataset:
+              </span>
+              <div className="flex flex-wrap items-center gap-1.5">
+                {SAMPLE_DATASETS.map((sample) => (
+                  <button
+                    key={sample.name}
+                    type="button"
+                    disabled={isUploading}
+                    onClick={() => onSelectSample(sample)}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-white hover:bg-neutral-100 text-neutral-700 border border-neutral-200 shadow-2xs transition cursor-pointer disabled:opacity-50"
+                  >
+                    <span>{sample.name.replace(/\.csv$/i, '')}</span>
+                    <span className="text-[10px] text-neutral-600 bg-neutral-100 px-1.5 py-0.2 rounded font-mono">{sample.badge}</span>
+                  </button>
+                ))}
+              </div>
             </div>
 
             <div
@@ -1039,6 +1181,18 @@ const SetupPanel: React.FC<SetupProps> = ({
             </div>
           </section>
 
+          {/* Automated Data Structure Analysis & Proposed Visualizations */}
+          {analysis && (
+            <DataStructureInspector
+              analysis={analysis}
+              selectedVisualizationId={selectedVisualizationId}
+              onSelectVisualization={onSelectVisualization}
+              onApplyQuestion={onApplyQuestion}
+              currentQuestion={question}
+              isAnalyzingDataset={isUploading}
+            />
+          )}
+
           {/* Step 2: question */}
           <section className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
             <div className="mb-3 flex items-center gap-2 text-sm font-medium text-neutral-700">
@@ -1088,35 +1242,89 @@ const RunHeader: React.FC<{
   stage: string;
   onStop: () => void;
   onReset: () => void;
-}> = ({ datasetName, question, status, stage, onStop, onReset }) => (
-  <div className="rounded-2xl border border-neutral-200 bg-white p-5 shadow-sm">
-    <div className="flex items-start justify-between gap-4">
+  onOpenReportsNav?: () => void;
+  onOpenAgentDrawer?: () => void;
+  reportCount?: number;
+}> = ({
+  datasetName,
+  question,
+  status,
+  stage,
+  onStop,
+  onReset,
+  onOpenReportsNav,
+  onOpenAgentDrawer,
+  reportCount = 1,
+}) => (
+  <div className="rounded-2xl border border-neutral-200 bg-white p-4 sm:p-5 shadow-sm">
+    <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 sm:gap-4">
       <div className="min-w-0">
         <div className="flex items-center gap-2 text-xs font-medium text-neutral-500">
-          Dataset: {datasetName}
+          <span className="h-2 w-2 rounded-full bg-io-blue" />
+          <span>Dataset: {datasetName}</span>
+          {reportCount > 1 && (
+            <span className="bg-neutral-100 text-neutral-600 px-2 py-0.2 rounded-full text-[10px] font-mono">
+              {reportCount} reports
+            </span>
+          )}
         </div>
         <p className="mt-1 truncate text-base font-medium text-neutral-900">{question}</p>
       </div>
-      {status === 'running' ? (
-        <button
-          onClick={onStop}
-          className="flex shrink-0 items-center gap-1.5 rounded-lg border border-io-red/30 bg-red-50 px-3 py-2 text-sm font-medium text-io-red transition hover:bg-red-100"
-        >
-          Stop
-        </button>
-      ) : (
-        <button
-          onClick={onReset}
-          className="flex shrink-0 items-center gap-1.5 rounded-lg border border-neutral-200 px-3 py-2 text-sm font-medium text-neutral-700 transition hover:bg-neutral-50"
-        >
-          New analysis
-        </button>
-      )}
+
+      <div className="flex items-center gap-2 shrink-0 self-start sm:self-auto">
+        {/* Mobile Reports Side-Navigation Toggle */}
+        {onOpenReportsNav && (
+          <button
+            type="button"
+            onClick={onOpenReportsNav}
+            className="lg:hidden flex items-center gap-1.5 rounded-xl border border-neutral-200 bg-neutral-50 px-3 py-2 text-xs font-semibold text-neutral-700 transition hover:bg-neutral-100 hover:text-neutral-900 cursor-pointer shadow-2xs"
+            title="Open Reports Navigation & Sections"
+          >
+            <Layers className="h-3.5 w-3.5 text-io-blue" />
+            <span>Reports</span>
+          </button>
+        )}
+
+        {/* Mobile Agent Activity Drawer Toggle */}
+        {onOpenAgentDrawer && (
+          <button
+            type="button"
+            onClick={onOpenAgentDrawer}
+            className={`lg:hidden flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs font-semibold transition cursor-pointer shadow-2xs ${
+              status === 'running'
+                ? 'border-blue-200 bg-blue-50 text-io-blue animate-pulse'
+                : 'border-neutral-200 bg-neutral-50 text-neutral-700 hover:bg-neutral-100 hover:text-neutral-900'
+            }`}
+            title="Open Agent Activity Drawer"
+          >
+            <Bot className="h-3.5 w-3.5 text-io-blue" />
+            <span>Agent</span>
+          </button>
+        )}
+
+        {status === 'running' ? (
+          <button
+            type="button"
+            onClick={onStop}
+            className="flex items-center gap-1.5 rounded-xl border border-io-red/30 bg-red-50 px-3 py-2 text-xs sm:text-sm font-semibold text-io-red transition hover:bg-red-100 cursor-pointer"
+          >
+            Stop
+          </button>
+        ) : (
+          <button
+            type="button"
+            onClick={onReset}
+            className="flex items-center gap-1.5 rounded-xl border border-neutral-200 px-3 py-2 text-xs sm:text-sm font-semibold text-neutral-700 transition hover:bg-neutral-50 cursor-pointer"
+          >
+            New analysis
+          </button>
+        )}
+      </div>
     </div>
     {status === 'running' && (
-      <div className="mt-4 flex items-center gap-2 text-sm text-neutral-600">
+      <div className="mt-3 sm:mt-4 flex items-center gap-2 text-xs sm:text-sm text-neutral-600">
         <span className="inline-block h-2 w-2 rounded-full bg-io-blue animate-pulse" />
-        <span>{stage || 'Working...'}</span>
+        <span className="font-medium">{stage || 'Working...'}</span>
       </div>
     )}
   </div>
@@ -1617,10 +1825,30 @@ const ActivityRow: React.FC<{ log: ActivityLog }> = ({ log }) => {
 
 /* ─────────────────────────── Dashboard & Report view ─────────────────────────── */
 
-type DashboardTab = 'overview' | 'charts' | 'tables' | 'recommendations' | 'print';
+const ReportView: React.FC<{
+  report: AnalysisReport;
+  activeTab?: DashboardTab;
+  onTabChange?: (tab: DashboardTab) => void;
+  onOpenMobileNav?: () => void;
+  onOpenAgentDrawer?: () => void;
+  agentStatus?: Status;
+}> = ({
+  report,
+  activeTab: controlledTab,
+  onTabChange,
+  onOpenMobileNav,
+  onOpenAgentDrawer,
+  agentStatus,
+}) => {
+  const [internalTab, setInternalTab] = useState<DashboardTab>('overview');
+  const activeTab = controlledTab !== undefined ? controlledTab : internalTab;
+  const setActiveTab = (tab: DashboardTab) => {
+    if (onTabChange) {
+      onTabChange(tab);
+    }
+    setInternalTab(tab);
+  };
 
-const ReportView: React.FC<{ report: AnalysisReport }> = ({ report }) => {
-  const [activeTab, setActiveTab] = useState<DashboardTab>('overview');
   const [zoomedChart, setZoomedChart] = useState<ReportChart | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
   const [isExportingPdf, setIsExportingPdf] = useState(false);
@@ -2048,34 +2276,61 @@ const ReportView: React.FC<{ report: AnalysisReport }> = ({ report }) => {
         </div>
 
         {/* Dashboard Tabs Bar */}
-        <div className="mt-6 pt-4 border-t border-neutral-100 flex flex-wrap gap-1.5 overflow-x-auto no-scrollbar">
-          <TabBtn
-            active={activeTab === 'overview'}
-            onClick={() => setActiveTab('overview')}
-            label="Overview"
-          />
-          <TabBtn
-            active={activeTab === 'charts'}
-            onClick={() => setActiveTab('charts')}
-            label="Visualizations"
-            badge={validCharts.length}
-          />
-          <TabBtn
-            active={activeTab === 'tables'}
-            onClick={() => setActiveTab('tables')}
-            label="Data Tables"
-            badge={report.tables?.length || 0}
-          />
-          <TabBtn
-            active={activeTab === 'recommendations'}
-            onClick={() => setActiveTab('recommendations')}
-            label="Insights & Actions"
-          />
-          <TabBtn
-            active={activeTab === 'print'}
-            onClick={() => setActiveTab('print')}
-            label="Print Preview"
-          />
+        <div className="mt-6 pt-4 border-t border-neutral-100 flex items-center justify-between gap-2 overflow-x-auto no-scrollbar">
+          <div className="flex flex-wrap items-center gap-1.5 min-w-0">
+            {onOpenMobileNav && (
+              <button
+                type="button"
+                onClick={onOpenMobileNav}
+                className="lg:hidden flex items-center gap-1.5 px-3 py-2 rounded-xl border border-neutral-200 bg-neutral-100/90 hover:bg-neutral-200/90 text-xs font-bold text-neutral-800 transition cursor-pointer shadow-2xs"
+                title="Open Reports Navigation & Sections"
+              >
+                <Layers className="h-3.5 w-3.5 text-io-blue" />
+                <span>Index</span>
+              </button>
+            )}
+            <TabBtn
+              active={activeTab === 'overview'}
+              onClick={() => setActiveTab('overview')}
+              label="Overview"
+            />
+            <TabBtn
+              active={activeTab === 'charts'}
+              onClick={() => setActiveTab('charts')}
+              label="Visualizations"
+              badge={validCharts.length}
+            />
+            <TabBtn
+              active={activeTab === 'tables'}
+              onClick={() => setActiveTab('tables')}
+              label="Data Tables"
+              badge={report.tables?.length || 0}
+            />
+            <TabBtn
+              active={activeTab === 'recommendations'}
+              onClick={() => setActiveTab('recommendations')}
+              label="Insights & Actions"
+            />
+            <TabBtn
+              active={activeTab === 'print'}
+              onClick={() => setActiveTab('print')}
+              label="Print Preview"
+            />
+          </div>
+
+          {onOpenAgentDrawer && (
+            <button
+              type="button"
+              onClick={onOpenAgentDrawer}
+              className="lg:hidden shrink-0 flex items-center gap-1.5 px-3 py-2 rounded-xl border border-neutral-200 bg-white hover:bg-neutral-50 text-xs font-semibold text-neutral-800 transition cursor-pointer shadow-2xs"
+            >
+              <Bot className="h-3.5 w-3.5 text-io-blue" />
+              <span>Agent</span>
+              {agentStatus === 'running' && (
+                <span className="h-2 w-2 rounded-full bg-io-blue animate-pulse" />
+              )}
+            </button>
+          )}
         </div>
       </section>
 

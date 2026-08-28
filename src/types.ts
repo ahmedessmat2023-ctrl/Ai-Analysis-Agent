@@ -56,6 +56,19 @@ export interface ActivityLog {
   result?: string;
 }
 
+export type Status = 'idle' | 'uploading' | 'running' | 'done' | 'error';
+
+export interface ChatMessage {
+  id: string;
+  role: 'user' | 'assistant';
+  text: string;
+  status?: Status;
+  logs?: ActivityLog[];
+  report?: AnalysisReport | null;
+  stage?: string;
+  question?: string;
+}
+
 export interface UploadedFile {
   name: string;
   content?: string;

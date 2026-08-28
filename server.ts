@@ -470,6 +470,7 @@ async function startServer() {
       generationId,
       environmentId,
       googleToken,
+      structureRecommendations,
     } = req.body;
 
     if (!question || typeof question !== "string" || question.trim() === "") {
@@ -532,6 +533,11 @@ EXECUTE IMMEDIATELY:
       const fileNames = uploadedFiles.map((f) => f.name).join(", ");
       const dataSourceInstructions = `The user provided ${uploadedFiles.length} CSV file(s). ${gcsInstructions} The files will be located at /.agents/data/. Copy them all into ./workspace/data/ before profiling: \`cp /.agents/data/*.csv ./workspace/data/\`. Provided file(s): ${fileNames}.`;
 
+      let recommendationsSection = "";
+      if (typeof structureRecommendations === "string" && structureRecommendations.trim()) {
+        recommendationsSection = `\n\nDATA STRUCTURE & PROPOSED VISUALIZATION RECOMMENDATIONS:\n${structureRecommendations.trim()}\nWhen creating charts in step 4 (make_chart.py), prioritize these proposed visualization types (e.g. pie chart for categorical distributions, line chart for time series trends, bar chart for rankings).`;
+      }
+
       prompt = `You are an expert data analyst. Dataset name: "${effectiveDatasetName}".
 
 
@@ -540,7 +546,7 @@ ${dataSourceInstructions}
 
 
 BUSINESS QUESTION:
-${question}
+${question}${recommendationsSection}
 
 
 WORKFLOW REQUIREMENT:
